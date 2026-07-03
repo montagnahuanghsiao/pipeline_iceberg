@@ -18,8 +18,11 @@ NASA / GFW
        ocean.gold_daily_grid_features
        ocean.gold_map_metric
        ocean.gold_daily_metric_summary
-  -> Trino -> FastAPI -> frontend heatmap
+  -> Spark SQL validation and analysis
 ```
+
+Iceberg 使用 `HadoopCatalog`，warehouse 位於 HDFS。正式資料管線到 Spark SQL
+驗證為止；前端目前使用可重現的 Mock 資料展示互動流程。
 
 ## Gold 表
 
@@ -37,7 +40,7 @@ NASA / GFW
 - GFW 無活動或負值網格分數固定為 0；缺值標記為 `no_data`。
 - 顯示級距：0–未滿 20 `very_low`、20–未滿 40 `low`、40–未滿 60
   `medium`、60–未滿 80 `high`、80–100 `very_high`。
-- `raw_metric_value` 僅供品質檢查與 reconciliation；API 與前端只能使用
+- `raw_metric_value` 僅供品質檢查與 reconciliation；展示資料只能使用
   `relative_score`、`display_level`。
 
 相對分數只回答所選日期與海域內的高低位置。它不能跨日直接比較絕對變化，也不代表漁獲量或作業建議。

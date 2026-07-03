@@ -1,31 +1,66 @@
 # Kubernetes 部署流程
 
-## 前提
+## 支援範圍
 
-- Kubernetes Job 負責協調；Spark 實際以 YARN client mode 執行。
-- `/opt/zfs/project` 與 `/opt/zfs/sys` 掛載在執行節點。
-- Hadoop 3.5.0、Spark 3.5.8、Java 17 已安裝。
-- HDFS、YARN、Hive Metastore、Trino 已可用。
-- `nasa-auth` Secret 只由叢集建立，不提交 Cookie。
+正式資料流只包含：
 
-## 映像
-
-映像至少包含 Python 3.12、專案 requirements 與 Hadoop/Spark client 設定。Iceberg runtime 1.11.0 可預先放入 Spark `jars/`；若使用 `--packages`，Pod 必須能存取 Maven repository。
-
-```bash
-docker build -f pipeline_iceberg/deploy/docker/Dockerfile.collector -t dkreg.taroko:5000/ocean-hybrid-collector:0.2.0 pipeline_iceberg
-docker build -f pipeline_iceberg/deploy/docker/Dockerfile.spark-client -t dkreg.taroko:5000/ocean-hybrid-spark-client:3.5.8 pipeline_iceberg
-docker build -f pipeline_iceberg/deploy/docker/Dockerfile.api -t dkreg.taroko:5000/ocean-hybrid-api:0.2.0 pipeline_iceberg
+```text
+Python collection
+  -> local Raw/Bronze Parquet
+  -> HDFS Bronze
+  -> Spark on YARN Silver Parquet
+  -> Spark on YARN Gold Iceberg
+  -> HDFS Iceberg warehouse
 ```
 
-## 安裝
+核心版本：
+
+- Python 3.12
+- Hadoop 3.5.0（HDFS、YARN）
+- Spark 3.5.8、Scala 2.12
+- Apache Iceberg 1.11.0
+- Java 17
+
+Iceberg 使用 `HadoopCatalog`：
+
+```properties
+spark.sql.catalog.lake=org.apache.iceberg.spark.SparkCatalog
+spark.sql.catalog.lake.type=hadoop
+spark.sql.catalog.lake.warehouse=hdfs:///dataset/ocean/warehouse
+```
+
+## 前置條件
+
+- Kubernetes Job 可連線 Hadoop 叢集。
+- `/opt/zfs/project` 與 `/opt/zfs/sys` 已掛載至 Job。
+- HDFS、YARN 可用，且執行帳號可寫入 Bronze、Silver 與 Iceberg warehouse。
+- Spark client 可取得 Iceberg runtime JAR。
+- NASA 認證資料只能放在 Kubernetes Secret，不可提交 Git。
+
+## 建置映像
+
+```bash
+docker build \
+  -f pipeline_iceberg/deploy/docker/Dockerfile.collector \
+  -t dkreg.taroko:5000/ocean-collector:0.3.0 \
+  pipeline_iceberg
+
+docker build \
+  -f pipeline_iceberg/deploy/docker/Dockerfile.spark-client \
+  -t dkreg.taroko:5000/ocean-spark-client:3.5.8 \
+  pipeline_iceberg
+```
+
+## 部署設定
 
 ```bash
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/00-configmap.yaml
-kubectl create secret generic nasa-auth -n dt --from-file=cookie=/private/nasa_cookie.txt
+kubectl create secret generic nasa-auth \
+  -n dt \
+  --from-file=cookie=/private/nasa_cookie.txt
 ```
 
-依序執行：
+## 執行順序
 
 ```bash
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/01-bronze-job.yaml
@@ -39,33 +74,20 @@ kubectl wait -n dt --for=condition=complete job/ocean-silver --timeout=12h
 
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/04-gold-job.yaml
 kubectl wait -n dt --for=condition=complete job/ocean-gold --timeout=12h
-```
 
-維護：
-
-```bash
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/05-maintenance-cronjob.yaml
-kubectl apply -f pipeline_iceberg/deploy/kubernetes/06-api.yaml
-```
-
-## Trino catalog
-
-```properties
-connector.name=iceberg
-iceberg.catalog.type=hive_metastore
-hive.metastore.uri=thrift://hive-metastore.dt.svc.cluster.local:9083
-fs.hadoop.enabled=true
 ```
 
 ## 驗收
 
-1. HDFS Bronze 每個來源日期有 manifest 與非空 Parquet。
-2. Silver 唯一鍵無重複，NASA/GFW 日期涵蓋符合批次。
-3. Iceberg 最新 snapshot summary 的 added/deleted records 合理。
-4. `gold_map_metric` 每個日期、AOI、metric、resolution 無重複 grid。
-5. API 4km 台灣查詢 P95 達專題設定門檻；大型 AOI 使用 16/32km。
-6. Spark UI 無單一長尾 task、過量 spill 或數千個小檔案。
+1. Bronze manifest 的 checksum、筆數與日期範圍正確。
+2. Silver NASA/GFW 分區只覆寫指定日期，且唯一鍵沒有重複。
+3. Gold Iceberg snapshot 有正確的新增／刪除筆數摘要。
+4. `relative_score` 全部介於 0–100。
+5. 以 Spark SQL 查詢指定日期、AOI、指標與解析度時能進行分區裁剪。
+6. Spark UI 沒有明顯 task skew、shuffle spill 或大量小檔案。
 
-## 回滾
+## 重要限制
 
-Silver 是日期分區覆寫，可重跑受影響日期。Gold 使用 Iceberg snapshot；資料錯誤時先停止下游，再以已驗證 snapshot rollback，修正後重跑該日期。
+`HadoopCatalog` 適合目前的單一 Spark/Hadoop 路線。若未來需要正式前端即時
+查詢，必須另行設計跨引擎目錄與查詢服務；該擴充不屬於目前結業版本。

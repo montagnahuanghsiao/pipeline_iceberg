@@ -11,8 +11,7 @@ Python collectors
   -> HDFS Bronze staging
   -> Spark Silver Parquet
   -> Spark Gold Iceberg
-  -> Trino-compatible API
-  -> frontend heatmap
+  -> Spark SQL validation and analysis
 ```
 
 Bronze remains reproducible local source data. Before a distributed Silver job,
@@ -27,13 +26,13 @@ pipeline_iceberg/
   contracts/            machine-readable dataset contracts
   jobs/                 Spark Silver and Gold jobs
   scripts/              operational shell entrypoints
-  src/ocean_pipeline/   shared Python and API modules
+  src/ocean_pipeline/   shared configuration catalog module
   tests/                unit tests independent of a live cluster
 ```
 
 ## Runtime
 
-- Python 3.12 for collection and API
+- Python 3.12 for collection
 - Hadoop 3.5.0
 - Spark 3.5.8, Scala 2.12
 - Apache Iceberg 1.11.0
@@ -58,8 +57,12 @@ bash pipeline_iceberg/scripts/run_bronze.sh
 bash pipeline_iceberg/scripts/upload_bronze.sh
 bash pipeline_iceberg/scripts/run_silver.sh
 bash pipeline_iceberg/scripts/run_gold.sh
-uvicorn ocean_pipeline.api:app --app-dir pipeline_iceberg/src --host 0.0.0.0 --port 8000
 ```
+
+Gold uses Iceberg `HadoopCatalog` with its warehouse on HDFS. The supported
+pipeline stops after Spark SQL validation. The current frontend uses
+deterministic mock data; production serving is intentionally outside this
+focused pipeline.
 
 Gold produces:
 

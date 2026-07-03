@@ -31,7 +31,7 @@ Raw/Bronze Parquet -> Silver Parquet -> Gold Iceberg
 | Spark | executor CPU、shuffle read/write、spill、peak memory、task skew |
 | HDFS | 讀寫 bytes、檔案數、P50/P95 檔案大小 |
 | Iceberg Gold | commit 時間、snapshot、manifest、metadata 大小 |
-| Serving | Trino scanned bytes、查詢 P50/P95、API payload 大小 |
+| Gold 查詢 | Spark SQL scanned bytes、查詢 P50/P95 |
 
 ## 驗收重點
 

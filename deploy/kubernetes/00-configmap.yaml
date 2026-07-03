@@ -11,7 +11,6 @@ data:
   ICEBERG_WAREHOUSE: hdfs:///dataset/ocean/warehouse
   ICEBERG_CATALOG: lake
   ICEBERG_NAMESPACE: ocean
-  HIVE_METASTORE_URI: thrift://hive-metastore.dt.svc.cluster.local:9083
   AOI_ID: taiwan
   START_DATE: "2024-12-01"
   END_DATE: "2024-12-31"
