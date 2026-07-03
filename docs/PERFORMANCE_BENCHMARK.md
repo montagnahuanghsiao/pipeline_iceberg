@@ -1,36 +1,41 @@
-# Hybrid vs Multi-Iceberg benchmark contract
+# Pipeline 效能驗證規格
 
-Use the same source files, date range, AOI, Spark resources and metric catalog.
-Only the storage design may differ.
+本文件只驗證目前唯一支援的資料流：
 
-## Fixed inputs
+```text
+Raw/Bronze Parquet -> Silver Parquet -> Gold Iceberg
+```
 
-- identical HDFS Raw/Bronze file snapshot and checksums
-- identical `START_DATE`, `END_DATE`, `AOI_ID`
-- identical executor count, cores, memory, shuffle partitions and AQE settings
-- cold-cache run first; warm-cache runs reported separately
-- three runs per case; report median and P95 where applicable
+## 固定條件
 
-## Required correctness gate
+- 使用相同來源檔案、checksum、日期範圍與 AOI。
+- 固定 executor 數量、核心、記憶體、shuffle partitions 與 AQE 設定。
+- 冷快取與暖快取分開記錄。
+- 每個案例至少執行三次，報告中位數；查詢延遲另報 P95。
 
-Before comparing speed, both pipelines must match on:
+## 正確性門檻
 
-- Silver and Gold row counts by date
-- unique-key duplicate counts
-- null counts and min/max/sum for every metric
-- `gold_map_metric` schema fingerprint
-- sampled grid values within floating-point tolerance
+效能結果必須先通過：
 
-## Metrics
+- Bronze、Silver、Gold 每日筆數 reconciliation。
+- 唯一鍵重複數為零。
+- 必要欄位缺值率及數值範圍符合 contract。
+- `relative_score` 介於 0–100。
+- 抽樣網格可由 Silver 原始值重新計算並核對。
 
-| Area | Metric |
+## 量測指標
+
+| 區域 | 指標 |
 |---|---|
-| End-to-end | wall-clock duration, success rate |
-| Spark | executor CPU time, shuffle read/write, spill, peak memory |
-| HDFS | bytes read/written, file count, mean/P50/P95 file size |
-| Iceberg | commit duration, snapshot count, manifest count, metadata size |
-| Serving | Trino scanned bytes, query latency P50/P95, API payload bytes |
-| Operations | retry duration, late-date replay duration, maintenance duration |
+| 端到端 | 總執行時間、成功率、失敗重跑時間 |
+| Spark | executor CPU、shuffle read/write、spill、peak memory、task skew |
+| HDFS | 讀寫 bytes、檔案數、P50/P95 檔案大小 |
+| Iceberg Gold | commit 時間、snapshot、manifest、metadata 大小 |
+| Serving | Trino scanned bytes、查詢 P50/P95、API payload 大小 |
 
-Do not claim a winner from one run or from runtime alone. A faster run that
-produces different rows, excessive small files or higher query latency fails.
+## 驗收重點
+
+- 增量執行只掃描指定日期與 AOI。
+- Gold 地圖查詢必須使用 `event_date`、`aoi_id`、`resolution_km` 分區裁剪。
+- Parquet 與 Iceberg 目標檔案大小約 128–256 MiB，避免大量小檔案。
+- 不以單次最快結果宣稱效能；資料不一致或產生過量小檔即視為失敗。

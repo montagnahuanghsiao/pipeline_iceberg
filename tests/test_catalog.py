@@ -14,8 +14,15 @@ class CatalogTest(unittest.TestCase):
             self.assertLess(aoi.min_lon, aoi.max_lon)
 
     def test_metric_key_is_unique(self):
-        keys = [(item["product_id"], item["metric_id"]) for item in load_metrics()]
+        metrics = load_metrics()
+        keys = [(item["product_id"], item["metric_id"]) for item in metrics]
         self.assertEqual(len(keys), len(set(keys)))
+
+    def test_all_display_metrics_are_relative_scores(self):
+        for metric in load_metrics():
+            self.assertEqual(metric["unit"], "")
+            self.assertEqual(metric["min"], 0)
+            self.assertEqual(metric["max"], 100)
 
 
 if __name__ == "__main__":

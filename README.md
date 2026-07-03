@@ -1,6 +1,7 @@
 # OceanGrid Iceberg Pipeline
 
-Production-oriented pipeline for the OceanGrid bootcamp project.
+The only supported production-oriented pipeline for the OceanGrid bootcamp
+project.
 
 ## Data flow
 
@@ -64,6 +65,7 @@ Gold produces:
 
 - `ocean.gold_daily_grid_features`: wide calculation table.
 - `ocean.gold_map_metric`: long frontend-serving table.
+- `ocean.gold_daily_metric_summary`: daily relative-score summary table.
 
 Design and deployment:
 

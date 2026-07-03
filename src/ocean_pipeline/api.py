@@ -78,7 +78,7 @@ def daily_grid(event_date: date = Query(alias="date"), aoi: str = "taiwan", prod
     validate_dimensions(aoi, product, metric)
     columns, rows = query(
         f"""
-        SELECT grid_id, grid_row, grid_col, metric_value, data_coverage
+        SELECT grid_id, grid_row, grid_col, relative_score, display_level, data_coverage
         FROM {MAP_TABLE}
         WHERE event_date = ? AND aoi_id = ? AND product_id = ? AND metric_id = ?
           AND resolution_km = ?
@@ -98,7 +98,7 @@ def summary(event_date: date = Query(alias="date"), aoi: str = "taiwan", product
     validate_dimensions(aoi, product, metric)
     _, rows = query(
         f"""
-        SELECT average_value, maximum_value, cell_count, data_coverage
+        SELECT average_score, maximum_score, cell_count, data_coverage
         FROM {SUMMARY_TABLE}
         WHERE event_date = ? AND aoi_id = ? AND product_id = ? AND metric_id = ?
           AND resolution_km = ?
@@ -123,7 +123,7 @@ def trend(
     end_date = end_date or date(2999, 12, 31)
     _, rows = query(
         f"""
-        SELECT event_date, average_value
+        SELECT event_date, average_score
         FROM {SUMMARY_TABLE}
         WHERE event_date BETWEEN ? AND ?
           AND aoi_id = ? AND product_id = ? AND metric_id = ?

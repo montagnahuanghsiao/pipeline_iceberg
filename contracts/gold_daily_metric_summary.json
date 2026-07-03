@@ -1,0 +1,24 @@
+{
+  "dataset": "gold_daily_metric_summary",
+  "grain": "one row per date, AOI, product, metric and resolution",
+  "unique_key": [
+    "event_date",
+    "aoi_id",
+    "product_id",
+    "metric_id",
+    "resolution_km"
+  ],
+  "fields": {
+    "event_date": "date",
+    "aoi_id": "string",
+    "product_id": "string",
+    "metric_id": "string",
+    "resolution_km": "integer",
+    "average_score": "double",
+    "maximum_score": "double",
+    "cell_count": "long",
+    "data_coverage": "double"
+  },
+  "score_range": [0, 100],
+  "partition_by": ["event_date", "aoi_id", "resolution_km"]
+}

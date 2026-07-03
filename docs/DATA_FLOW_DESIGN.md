@@ -1,76 +1,53 @@
-# 高吞吐混合式資料流設計
+# Pipeline Iceberg 資料流設計
 
 ## 目標
 
-支援前端以 `date + aoi + product + metric + resolution` 查詢地圖，同時維持來源可追溯、日期增量、失敗可重跑與合理的小檔案數。
+前端可依 `date + aoi + product + metric + resolution` 查詢熱力圖。所有顯示指標統一為
+0–100 的相對分數，前端只表達「非常少、少、中等、多、非常多」，不顯示科學數值與單位。
 
 ## 資料流
 
 ```text
-NASA/GFW
-  -> Python bounded collectors
-  -> local Raw + Bronze Parquet
+NASA / GFW
+  -> Python collectors
+  -> local immutable Raw + Bronze Parquet
   -> HDFS Bronze staging
   -> Spark incremental Silver Parquet
-       - silver_nasa_daily_grid (六產品一次 pivot)
-       - silver_gfw_daily_grid
-  -> one Gold join
-  -> Iceberg Gold (HiveCatalog)
-       - gold_daily_grid_features
-       - gold_map_metric (4/16/32 km)
-       - gold_daily_metric_summary
-  -> Trino -> FastAPI -> Canvas heatmap
+  -> Spark Gold feature join
+  -> Iceberg Gold on HDFS
+       ocean.gold_daily_grid_features
+       ocean.gold_map_metric
+       ocean.gold_daily_metric_summary
+  -> Trino -> FastAPI -> frontend heatmap
 ```
 
-## 各層 grain 與分區
+## Gold 表
 
-| Dataset | Grain | Storage | Partition |
-|---|---|---|---|
-| Bronze NASA | source product pixel/day | local + HDFS Parquet | product/year/month/day |
-| Bronze GFW | source cell/flag/gear/day | local + HDFS Parquet | year/month/day |
-| Silver NASA | date + AOI + 4km grid | HDFS Parquet | event_date |
-| Silver GFW | date + AOI + 4km grid | HDFS Parquet | event_date |
-| Gold features | date + AOI + 4km grid | Iceberg | event_date, aoi_id |
-| Gold map | date + AOI + product + metric + resolution + grid | Iceberg | event_date, aoi_id, resolution_km |
-| Gold summary | date + AOI + product + metric + resolution | Iceberg | event_date, aoi_id, resolution_km |
+| 表 | 一列代表 | 主要用途 |
+|---|---|---|
+| `gold_daily_grid_features` | 日期、AOI、4 km 網格 | 保留清洗後科學值與可追溯特徵 |
+| `gold_map_metric` | 日期、AOI、產品、指標、解析度、網格 | 前端地圖 |
+| `gold_daily_metric_summary` | 日期、AOI、產品、指標、解析度 | 摘要與趨勢 |
 
-## 吞吐設計
+## 相對分數規則
 
-1. 每次執行必須提供 `start_date/end_date`，只讀與覆寫受影響日期。
-2. NASA 六產品先 union 成 long form，再以一次 pivot 形成 Silver 寬表，避免 Gold 六次 full join。
-3. Silver 以 `event_date + hash(grid_id)` 分片，允許同一天多個 task 寫入。
-4. Gold 只做 NASA/GFW 一次 join，寬表以 `MEMORY_AND_DISK` 重用後再建立長表。
-5. Iceberg 目標檔案 256 MiB、range distribution、ZSTD。
-6. 前端依 zoom 查 4/16/32 km；API 預設限制 100,000 cells。
-7. Summary/Trend 查詢使用預聚合表，不掃描 map cell 明細。
+- 比較範圍固定為同一個 `event_date + aoi_id + product_id + metric_id + resolution_km`。
+- 依 `raw_metric_value` 由低至高計算百分位排名，輸出 `relative_score` 0–100。
+- 只有一個有效網格時分數為 100。
+- GFW 無活動或負值網格分數固定為 0；缺值標記為 `no_data`。
+- 顯示級距：0–未滿 20 `very_low`、20–未滿 40 `low`、40–未滿 60
+  `medium`、60–未滿 80 `high`、80–100 `very_high`。
+- `raw_metric_value` 僅供品質檢查與 reconciliation；API 與前端只能使用
+  `relative_score`、`display_level`。
 
-## 一致性與重跑
+相對分數只回答所選日期與海域內的高低位置。它不能跨日直接比較絕對變化，也不代表漁獲量或作業建議。
 
-- Bronze 使用 checksum/manifest 判斷是否需要重新下載。
-- Silver 使用 dynamic partition overwrite，只替換輸入日期。
-- Gold 使用 Iceberg `overwritePartitions()` 原子提交。
-- 唯一鍵：
-  - features：`event_date + aoi_id + grid_id`
-  - map：`event_date + aoi_id + product_id + metric_id + resolution_km + grid_id`
-- 晚到資料以原日期重跑，同一 partition 原子替換。
+## 分區與重跑
 
-## Catalog
-
-Spark 與 Trino 必須共用 Hive Metastore：
-
-```text
-Spark Iceberg HiveCatalog <-> Hive Metastore <-> Trino Iceberg connector
-```
-
-Iceberg data/metadata 位於 HDFS；HMS 僅保存 table catalog entry。
-
-## 維護
-
-- 每日：`rewrite_data_files`、`rewrite_manifests`
-- 每週：`expire_snapshots`
-- orphan file 清除需保留安全時間，避免刪除仍在進行中的提交。
-- 監控：輸入/輸出筆數、shuffle spill、task skew、檔案數、平均檔案大小、API P95。
-
-## 限制
-
-`potential_fishing_score` 是 CHL/POC/NFLH 相對百分位代理指標，不是漁獲預測。GFW `fishing_hours` 是 apparent fishing effort。
+- Silver：按 `event_date` 動態覆寫。
+- Gold：Iceberg `overwritePartitions()` 原子覆寫。
+- Gold 分區：`event_date, aoi_id`；地圖與摘要另含 `resolution_km`。
+- 地圖唯一鍵：
+  `event_date + aoi_id + product_id + metric_id + resolution_km + grid_id`。
+- 既有 0.2.x Gold 表含舊欄位時，部署 0.3.0 前必須執行 Iceberg schema migration，
+  或在可重建的環境刪除 Gold 表後重跑指定日期；不可直接混寫兩種 schema。
