@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: dkreg.taroko:5000/ocean-api:0.2.0
+          image: dkreg.taroko:5000/ocean-hybrid-api:0.2.0
           command: ["uvicorn","ocean_pipeline.api:app","--host","0.0.0.0","--port","8000","--workers","2"]
           env:
             - {name: TRINO_HOST, value: trino.dt.svc.cluster.local}

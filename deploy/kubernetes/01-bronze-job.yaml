@@ -9,7 +9,7 @@ spec:
       nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
       containers:
         - name: bronze
-          image: dkreg.taroko:5000/ocean-python-etl:0.2.0
+          image: dkreg.taroko:5000/ocean-hybrid-collector:0.2.0
           command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_bronze.sh"]
           envFrom:
             - configMapRef: {name: ocean-pipeline-config}

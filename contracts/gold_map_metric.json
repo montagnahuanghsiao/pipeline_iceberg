@@ -1,23 +1,24 @@
 {
   "dataset": "gold_map_metric",
-  "purpose": "Frontend map cells selectable by date, AOI, product and metric.",
-  "grain": "event_date + aoi_id + product_id + metric_id + grid_id",
-  "unique_key": ["event_date", "aoi_id", "product_id", "metric_id", "grid_id"],
-  "partition_spec": ["event_date", "aoi_id"],
-  "storage": "Apache Iceberg on HDFS",
+  "purpose": "Frontend map cells selectable by date, AOI, product, metric and resolution.",
+  "grain": "event_date + aoi_id + product_id + metric_id + resolution_km + grid_id",
+  "unique_key": ["event_date", "aoi_id", "product_id", "metric_id", "resolution_km", "grid_id"],
+  "partition_spec": ["event_date", "aoi_id", "resolution_km"],
   "required_columns": {
     "event_date": "date",
     "aoi_id": "string",
     "product_id": "string",
     "metric_id": "string",
+    "resolution_km": "integer",
     "grid_id": "string",
     "grid_row": "smallint",
     "grid_col": "smallint",
     "metric_value": "double",
     "data_coverage": "double",
-    "updated_at_utc": "timestamp"
+    "updated_at_utc": "timestamp",
+    "pipeline_version": "string"
   },
-  "late_data_strategy": "Atomically replace affected event_date + aoi_id partitions.",
+  "resolutions_km": [4, 16, 32],
   "limitations": [
     "potential_fishing_score is an environmental suitability proxy",
     "fishing_hours represents apparent fishing effort, not catch"

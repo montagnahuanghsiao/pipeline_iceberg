@@ -12,6 +12,12 @@
 
 映像至少包含 Python 3.12、專案 requirements 與 Hadoop/Spark client 設定。Iceberg runtime 1.11.0 可預先放入 Spark `jars/`；若使用 `--packages`，Pod 必須能存取 Maven repository。
 
+```bash
+docker build -f pipeline_iceberg/deploy/docker/Dockerfile.collector -t dkreg.taroko:5000/ocean-hybrid-collector:0.2.0 pipeline_iceberg
+docker build -f pipeline_iceberg/deploy/docker/Dockerfile.spark-client -t dkreg.taroko:5000/ocean-hybrid-spark-client:3.5.8 pipeline_iceberg
+docker build -f pipeline_iceberg/deploy/docker/Dockerfile.api -t dkreg.taroko:5000/ocean-hybrid-api:0.2.0 pipeline_iceberg
+```
+
 ## 安裝
 
 ```bash

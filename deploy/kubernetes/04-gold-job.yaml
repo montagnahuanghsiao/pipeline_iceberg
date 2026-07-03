@@ -7,7 +7,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: spark-submit
-          image: dkreg.taroko:5000/ocean-spark-client:3.5.8
+          image: dkreg.taroko:5000/ocean-hybrid-spark-client:3.5.8
           command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_gold.sh"]
           envFrom: [{configMapRef: {name: ocean-pipeline-config}}]
           volumeMounts:
