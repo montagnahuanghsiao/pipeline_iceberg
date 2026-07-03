@@ -1,8 +1,7 @@
-"""Run the existing source-specific collectors behind one Bronze entrypoint.
+"""Run the source-specific collectors behind one Bronze entrypoint.
 
-The mature NASA/GFW decoding logic remains in ``pipeline/scripts``. This
-adapter gives the Iceberg pipeline one reproducible command without duplicating
-source semantics or download code.
+Collectors live in ``pipeline_iceberg/collectors`` and are shared by both
+pipeline variants.
 """
 
 from __future__ import annotations
@@ -40,10 +39,10 @@ def parse_args():
 
 def main() -> int:
     options = parse_args()
-    scripts = options.project_root / "pipeline" / "scripts"
+    scripts = options.project_root / "pipeline_iceberg" / "collectors"
     failures: list[str] = []
     if options.source in {"nasa", "all"}:
-        nasa = load_module(scripts / "nasa_dl_v2.py", "ocean_nasa_collector")
+        nasa = load_module(scripts / "nasa.py", "ocean_nasa_collector")
         for product in NASA_PRODUCTS:
             argv = ["--type", product, "--start", options.start, "--end", options.end, "--data-root", str(options.data_root)]
             if options.overwrite:
@@ -51,7 +50,7 @@ def main() -> int:
             if int(nasa.main(argv)) != 0:
                 failures.append(f"NASA:{product}")
     if options.source in {"gfw", "all"}:
-        gfw = load_module(scripts / "gfw_dl.py", "ocean_gfw_collector")
+        gfw = load_module(scripts / "gfw.py", "ocean_gfw_collector")
         gfw.BASE_DATA_DIR = options.data_root
         gfw.RAW_DIR = options.data_root / "raw"
         gfw.TMP_DIR = options.data_root / "_gfw_tmp"
