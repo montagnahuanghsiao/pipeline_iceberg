@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: ocean-gold, namespace: dt}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: spark-submit
+          image: dkreg.taroko:5000/ocean-spark-client:3.5.8
+          command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_gold.sh"]
+          envFrom: [{configMapRef: {name: ocean-pipeline-config}}]
+          volumeMounts:
+            - {name: project, mountPath: /opt/zfs/project}
+            - {name: system, mountPath: /opt/zfs/sys, readOnly: true}
+      volumes:
+        - {name: project, hostPath: {path: /opt/zfs/project, type: Directory}}
+        - {name: system, hostPath: {path: /opt/zfs/sys, type: Directory}}

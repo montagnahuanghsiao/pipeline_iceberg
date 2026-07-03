@@ -1,0 +1,16 @@
+{
+  "taiwan": {
+    "label": "台灣周邊",
+    "min_lat": 20.0,
+    "max_lat": 27.0,
+    "min_lon": 118.0,
+    "max_lon": 124.0
+  },
+  "northwest_pacific": {
+    "label": "西北太平洋",
+    "min_lat": 15.0,
+    "max_lat": 35.0,
+    "min_lon": 105.0,
+    "max_lon": 135.0
+  }
+}

@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: ocean-bronze, namespace: dt}
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
+      containers:
+        - name: bronze
+          image: dkreg.taroko:5000/ocean-python-etl:0.2.0
+          command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_bronze.sh"]
+          envFrom:
+            - configMapRef: {name: ocean-pipeline-config}
+          env:
+            - name: NASA_COOKIE
+              valueFrom: {secretKeyRef: {name: nasa-auth, key: cookie}}
+          volumeMounts:
+            - {name: project, mountPath: /opt/zfs/project}
+      volumes:
+        - name: project
+          hostPath: {path: /opt/zfs/project, type: Directory}

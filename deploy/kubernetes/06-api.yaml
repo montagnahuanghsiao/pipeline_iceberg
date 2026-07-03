@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ocean-api, namespace: dt}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: ocean-api}}
+  template:
+    metadata: {labels: {app: ocean-api}}
+    spec:
+      containers:
+        - name: api
+          image: dkreg.taroko:5000/ocean-api:0.2.0
+          command: ["uvicorn","ocean_pipeline.api:app","--host","0.0.0.0","--port","8000","--workers","2"]
+          env:
+            - {name: TRINO_HOST, value: trino.dt.svc.cluster.local}
+            - {name: TRINO_PORT, value: "8080"}
+            - {name: TRINO_CATALOG, value: iceberg}
+            - {name: TRINO_SCHEMA, value: ocean}
+            - {name: GOLD_MAP_TABLE, value: gold_map_metric}
+            - {name: GOLD_SUMMARY_TABLE, value: gold_daily_metric_summary}
+          ports: [{containerPort: 8000}]
+          readinessProbe: {httpGet: {path: /api/v1/catalog, port: 8000}, initialDelaySeconds: 5, periodSeconds: 10}
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ocean-api, namespace: dt}
+spec:
+  selector: {app: ocean-api}
+  ports: [{port: 8000, targetPort: 8000}]
