@@ -2,10 +2,15 @@ apiVersion: batch/v1
 kind: Job
 metadata: {name: ocean-bronze-upload, namespace: dt}
 spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 21600
   template:
+    metadata:
+      labels: {app: ocean-pipeline, stage: bronze-upload}
     spec:
       restartPolicy: Never
       nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
+      securityContext: {runAsUser: 1000, runAsGroup: 1001, fsGroup: 1001}
       containers:
         - name: upload
           image: dkreg.taroko:5000/ocean-spark-client:3.5.8
@@ -14,6 +19,9 @@ spec:
           volumeMounts:
             - {name: project, mountPath: /opt/zfs/project}
             - {name: system, mountPath: /opt/zfs/sys, readOnly: true}
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: "1", memory: 2Gi}
       volumes:
         - {name: project, hostPath: {path: /opt/zfs/project, type: Directory}}
         - {name: system, hostPath: {path: /opt/zfs/sys, type: Directory}}

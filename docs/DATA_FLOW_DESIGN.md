@@ -18,11 +18,21 @@ NASA / GFW
        ocean.gold_daily_grid_features
        ocean.gold_map_metric
        ocean.gold_daily_metric_summary
-  -> Spark SQL validation and analysis
+  -> Spark export serving Parquet
+  -> local versioned serving release
+  -> Flask + DuckDB API
+  -> Nginx frontend heatmap
 ```
 
-Iceberg 使用 `HadoopCatalog`，warehouse 位於 HDFS。正式資料管線到 Spark SQL
-驗證為止；前端目前使用可重現的 Mock 資料展示互動流程。
+Iceberg 使用 `HadoopCatalog`，warehouse 位於 HDFS。前端不直接掃描 Iceberg，
+也不在 HTTP request 內啟動 Spark。每次 Gold 完成後由 Spark 匯出前端所需的
+窄欄位 Parquet，下載成 `/opt/zfs/project/data/serving/releases/<release_id>`，
+再以 `current` symlink 原子切換。Flask 以 DuckDB 查詢 `current`；本架構不使用
+Trino。
+
+HadoopCatalog 的 namespace 通常對應 warehouse 下的 `ocean/` 目錄，不應把
+實體路徑硬寫成 Hive 慣例的 `ocean.db/`。正式識別應使用表名
+`lake.ocean.<table>`。
 
 ## Gold 表
 
@@ -31,6 +41,19 @@ Iceberg 使用 `HadoopCatalog`，warehouse 位於 HDFS。正式資料管線到 S
 | `gold_daily_grid_features` | 日期、AOI、4 km 網格 | 保留清洗後科學值與可追溯特徵 |
 | `gold_map_metric` | 日期、AOI、產品、指標、解析度、網格 | 前端地圖 |
 | `gold_daily_metric_summary` | 日期、AOI、產品、指標、解析度 | 摘要與趨勢 |
+
+## Flask API
+
+| Endpoint | 用途 |
+|---|---|
+| `GET /healthz` | 確認 serving snapshot 已掛載 |
+| `GET /api/v1/catalog` | AOI、產品指標與解析度契約 |
+| `GET /api/v1/gold/daily-grid` | 指定日期的地圖網格 |
+| `GET /api/v1/gold/summary` | 指定日期的摘要 |
+| `GET /api/v1/gold/trend` | 指定 AOI／指標的日期趨勢 |
+
+查詢參數為 `date`（trend 不需要）、`aoi`、`product`、`metric`、
+`resolution`。API 驗證 AOI、產品／指標配對及解析度，並限制單次網格回傳量。
 
 ## 相對分數規則
 

@@ -11,7 +11,9 @@ Python collectors
   -> HDFS Bronze staging
   -> Spark Silver Parquet
   -> Spark Gold Iceberg
-  -> Spark SQL validation and analysis
+  -> Spark serving snapshot
+  -> Flask + DuckDB API
+  -> Nginx frontend heatmap
 ```
 
 Bronze remains reproducible local source data. Before a distributed Silver job,
@@ -24,9 +26,9 @@ that exist only on the driver host.
 pipeline_iceberg/
   configs/              AOI, metric and runtime configuration
   contracts/            machine-readable dataset contracts
-  jobs/                 Spark Silver and Gold jobs
+  jobs/                 Spark Silver, Gold and serving export jobs
   scripts/              operational shell entrypoints
-  src/ocean_pipeline/   shared configuration catalog module
+  src/ocean_pipeline/   shared catalog and Flask API
   tests/                unit tests independent of a live cluster
 ```
 
@@ -57,12 +59,13 @@ bash pipeline_iceberg/scripts/run_bronze.sh
 bash pipeline_iceberg/scripts/upload_bronze.sh
 bash pipeline_iceberg/scripts/run_silver.sh
 bash pipeline_iceberg/scripts/run_gold.sh
+bash pipeline_iceberg/scripts/run_serving.sh
 ```
 
-Gold uses Iceberg `HadoopCatalog` with its warehouse on HDFS. The supported
-pipeline stops after Spark SQL validation. The current frontend uses
-deterministic mock data; production serving is intentionally outside this
-focused pipeline.
+Gold uses Iceberg `HadoopCatalog` with its warehouse on HDFS. Gold remains the
+authoritative analytical layer. A Spark job exports narrow, partitioned Parquet
+snapshots to local versioned releases; Flask uses embedded DuckDB to query those
+snapshots and never starts Spark inside an HTTP request. Trino is not used.
 
 Gold produces:
 
@@ -78,7 +81,7 @@ Design and deployment:
 The serving grain is:
 
 ```text
-event_date + aoi_id + product_id + metric_id + grid_id
+event_date + aoi_id + product_id + metric_id + resolution_km + grid_id
 ```
 
 `potential_fishing_score` is an explainable environmental suitability proxy.

@@ -2,13 +2,17 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/opt/zfs/project/pipeline_iceberg/src
 
-COPY requirements.lock /tmp/requirements.lock
-RUN pip install --no-cache-dir -r /tmp/requirements.lock
+COPY requirements.api.lock /tmp/requirements.api.lock
+RUN pip install --no-cache-dir -r /tmp/requirements.api.lock \
+    && groupadd --gid 1001 bigred \
+    && useradd --uid 1000 --gid 1001 --create-home bigred
 
-COPY src/ocean_pipeline /app/ocean_pipeline
-WORKDIR /app
-
+COPY --chown=1000:1001 src /opt/zfs/project/pipeline_iceberg/src
+COPY --chown=1000:1001 configs /opt/zfs/project/pipeline_iceberg/configs
+WORKDIR /opt/zfs/project/pipeline_iceberg
+USER 1000:1001
 EXPOSE 8000
-CMD ["uvicorn","ocean_pipeline.api:app","--host","0.0.0.0","--port","8000"]
+
+CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "60", "--bind", "0.0.0.0:8000", "ocean_pipeline.api:app"]

@@ -1,12 +1,14 @@
 apiVersion: batch/v1
 kind: Job
-metadata: {name: ocean-gold, namespace: dt}
+metadata:
+  name: ocean-serving-export
+  namespace: dt
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 43200
+  activeDeadlineSeconds: 21600
   template:
     metadata:
-      labels: {app: ocean-pipeline, stage: gold}
+      labels: {app: ocean-pipeline, stage: serving-export}
     spec:
       restartPolicy: Never
       nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
@@ -14,7 +16,7 @@ spec:
       containers:
         - name: spark-submit
           image: dkreg.taroko:5000/ocean-spark-client:3.5.8
-          command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_gold.sh"]
+          command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_serving.sh"]
           envFrom: [{configMapRef: {name: ocean-pipeline-config}}]
           volumeMounts:
             - {name: project, mountPath: /opt/zfs/project}

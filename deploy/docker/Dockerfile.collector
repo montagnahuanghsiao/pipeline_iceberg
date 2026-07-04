@@ -5,9 +5,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libhdf5-103-1 libnetcdf19 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1001 bigred \
+    && useradd --uid 1000 --gid 1001 --create-home bigred
 
 COPY requirements.lock /tmp/requirements.lock
 RUN pip install --no-cache-dir -r /tmp/requirements.lock
 
 WORKDIR /opt/zfs/project
+USER 1000:1001
