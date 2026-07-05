@@ -1,27 +1,70 @@
 apiVersion: batch/v1
 kind: Job
-metadata: {name: ocean-gold, namespace: dt}
+metadata:
+  name: ocean-gold
+  namespace: dt
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 43200
   template:
     metadata:
-      labels: {app: ocean-pipeline, stage: gold}
+      labels:
+        app: ocean-pipeline
+        stage: gold
     spec:
       restartPolicy: Never
-      nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
-      securityContext: {runAsUser: 1000, runAsGroup: 1001, fsGroup: 1001}
+      nodeSelector:
+        dt: admin
+      imagePullSecrets:
+        - name: dkreg
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 10.98.136.10
+        searches:
+          - svc-dt.dt.svc.tkdt.k8s
+          - dt.svc.tkdt.k8s
+          - svc.tkdt.k8s
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1001
+        fsGroup: 1001
       containers:
         - name: spark-submit
           image: dkreg.taroko:5000/ocean-spark-client:3.5.8
-          command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_gold.sh"]
-          envFrom: [{configMapRef: {name: ocean-pipeline-config}}]
+          command:
+            - "/bin/bash"
+            - "/opt/zfs/project/pipeline_iceberg/scripts/run_gold.sh"
+          envFrom:
+            - configMapRef:
+                name: ocean-pipeline-config
+          env:
+            - name: JAVA_HOME
+              value: "/opt/java/openjdk"
+          env:
+            - name: SPARK_DRIVER_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           volumeMounts:
-            - {name: project, mountPath: /opt/zfs/project}
-            - {name: system, mountPath: /opt/zfs/sys, readOnly: true}
+            - name: project
+              mountPath: /opt/zfs/project
+            - name: system
+              mountPath: /opt/zfs/sys
+              readOnly: true
           resources:
-            requests: {cpu: 500m, memory: 2Gi}
-            limits: {cpu: "2", memory: 6Gi}
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
       volumes:
-        - {name: project, hostPath: {path: /opt/zfs/project, type: Directory}}
-        - {name: system, hostPath: {path: /opt/zfs/sys, type: Directory}}
+        - name: project
+          hostPath:
+            path: /opt/zfs/project
+            type: Directory
+        - name: system
+          hostPath:
+            path: /opt/zfs/sys
+            type: Directory

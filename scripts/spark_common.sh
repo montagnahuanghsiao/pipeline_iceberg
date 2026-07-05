@@ -36,4 +36,8 @@ SPARK_COMMON=(
   --conf "spark.sql.adaptive.coalescePartitions.enabled=true"
   --conf "spark.sql.adaptive.skewJoin.enabled=true"
   --conf "spark.sql.adaptive.advisoryPartitionSizeInBytes=${SPARK_ADVISORY_PARTITION_SIZE}"
+  --conf "spark.driver.host=${SPARK_DRIVER_HOST}"
+  --conf "spark.driver.bindAddress=0.0.0.0"
+  --conf "spark.driver.port=7078"
+  --conf "spark.driver.blockManager.port=7079"
 )

@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: dkreg.taroko:5000/ocean-frontend:0.3.0
+          image: dkreg.taroko:5000/ocean-frontend:0.3.1
           imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 8080}

@@ -1,30 +1,51 @@
 apiVersion: batch/v1
 kind: Job
-metadata: {name: ocean-bronze, namespace: dt}
+metadata:
+  name: ocean-bronze
+  namespace: dt
 spec:
   backoffLimit: 2
   activeDeadlineSeconds: 86400
   template:
     metadata:
-      labels: {app: ocean-pipeline, stage: bronze}
+      labels:
+        app: ocean-pipeline
+        stage: bronze
     spec:
       restartPolicy: Never
-      nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
-      securityContext: {runAsUser: 1000, runAsGroup: 1001, fsGroup: 1001}
+      nodeSelector:
+        kubernetes.io/hostname: tkdt-worker1
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1001
+        fsGroup: 1001
       containers:
         - name: bronze
           image: dkreg.taroko:5000/ocean-collector:0.3.0
-          command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/run_bronze.sh"]
+          command:
+            - "/bin/bash"
+            - "/opt/zfs/project/pipeline_iceberg/scripts/run_bronze.sh"
           envFrom:
-            - configMapRef: {name: ocean-pipeline-config}
+            - configMapRef:
+                name: ocean-pipeline-config
           env:
             - name: NASA_COOKIE
-              valueFrom: {secretKeyRef: {name: nasa-auth, key: cookie}}
+              valueFrom:
+                secretKeyRef:
+                  name: nasa-auth
+                  key: cookie
           volumeMounts:
-            - {name: project, mountPath: /opt/zfs/project}
+            - name: project
+              mountPath: /opt/zfs/project
           resources:
-            requests: {cpu: 500m, memory: 1Gi}
-            limits: {cpu: "2", memory: 4Gi}
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
       volumes:
         - name: project
-          hostPath: {path: /opt/zfs/project, type: Directory}
+          hostPath:
+            path: /opt/zfs/project
+            type: Directory

@@ -8,22 +8,55 @@ spec:
   activeDeadlineSeconds: 1800
   template:
     metadata:
-      labels: {app: ocean-pipeline, stage: preflight}
+      labels:
+        app: ocean-pipeline
+        stage: preflight
     spec:
       restartPolicy: Never
-      nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
-      securityContext: {runAsUser: 1000, runAsGroup: 1001, fsGroup: 1001}
+      nodeSelector:
+        dt: admin
+      imagePullSecrets:
+        - name: dkreg
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 10.98.136.10
+        searches:
+          - svc-dt.dt.svc.tkdt.k8s
+          - dt.svc.tkdt.k8s
+          - svc.tkdt.k8s
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1001
+        fsGroup: 1001
       containers:
         - name: preflight
           image: dkreg.taroko:5000/ocean-spark-client:3.5.8
-          command: ["/bin/bash", "/opt/zfs/project/pipeline_iceberg/scripts/preflight.sh"]
-          envFrom: [{configMapRef: {name: ocean-pipeline-config}}]
+          command:
+            - "/bin/bash"
+            - "/opt/zfs/project/pipeline_iceberg/scripts/preflight.sh"
+          envFrom:
+            - configMapRef:
+                name: ocean-pipeline-config
           volumeMounts:
-            - {name: project, mountPath: /opt/zfs/project}
-            - {name: system, mountPath: /opt/zfs/sys, readOnly: true}
+            - name: project
+              mountPath: /opt/zfs/project
+            - name: system
+              mountPath: /opt/zfs/sys
+              readOnly: true
           resources:
-            requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: 500m, memory: 1Gi}
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
       volumes:
-        - {name: project, hostPath: {path: /opt/zfs/project, type: Directory}}
-        - {name: system, hostPath: {path: /opt/zfs/sys, type: Directory}}
+        - name: project
+          hostPath:
+            path: /opt/zfs/project
+            type: Directory
+        - name: system
+          hostPath:
+            path: /opt/zfs/sys
+            type: Directory
