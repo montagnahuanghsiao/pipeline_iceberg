@@ -1,0 +1,22 @@
+FROM docker.io/library/eclipse-temurin:17-jre-jammy
+
+# 安裝系統套件與建立使用者
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash python3 python3-pip procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1001 bigred \
+    && useradd --uid 1000 --gid 1001 --create-home bigred \
+    # 👉 修正：手動建立工作目錄，並將擁有者改為 bigred
+    && mkdir -p /opt/zfs/project \
+    && chown -R bigred:bigred /opt/zfs/project
+
+ENV PYTHONUNBUFFERED=1
+
+# 指定工作目錄
+WORKDIR /opt/zfs/project
+
+# 👉 修正：直接使用帳號名稱切換，提高可讀性 (底層依然是 1000:1001)
+USER bigred
+
+# (可選) 如果你需要 pip 安裝套件，在 jammy 環境下可能需要這樣寫：
+# RUN pip3 install --break-system-packages <your-package>

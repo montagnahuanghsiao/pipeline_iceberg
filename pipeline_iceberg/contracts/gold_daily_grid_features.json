@@ -1,0 +1,48 @@
+{
+  "dataset": "gold_daily_grid_features",
+  "purpose": "Daily 4 km grid over cells observed by NASA in the processing window, with five final display products.",
+  "grain": "event_date + aoi_id + grid_id",
+  "unique_key": ["event_date", "aoi_id", "grid_id"],
+  "partition_spec": ["event_date", "aoi_id"],
+  "product_columns": {
+    "chlor_a": "double",
+    "sea_temperature_celsius": "double",
+    "ocean_productivity_score": "double",
+    "sustainability_pressure": "double",
+    "fishing_hours": "double"
+  },
+  "metadata_columns": {
+    "grid_row": "smallint",
+    "grid_col": "smallint",
+    "chlor_a_source": "string",
+    "sea_temperature_celsius_source": "string",
+    "ocean_productivity_score_source": "string",
+    "sustainability_pressure_source": "string",
+    "fishing_hours_source": "string",
+    "data_coverage": "double",
+    "updated_at_utc": "timestamp",
+    "pipeline_version": "string"
+  },
+  "nullable_product_columns": [
+    "chlor_a",
+    "sea_temperature_celsius",
+    "ocean_productivity_score",
+    "sustainability_pressure"
+  ],
+  "fill_policy": {
+    "window_days": "configured by --fill-window-days; MVP default deployment is 3",
+    "nasa_order": [
+      "observed",
+      "same-grid trailing mean",
+      "eight-neighbor trailing mean",
+      "no_data"
+    ],
+    "gfw_missing": 0,
+    "failure_policy": "NaN or a null without source=no_data fails the job; an explained no_data null is retained"
+  },
+  "formulas": {
+    "sea_temperature_celsius": "coalesce(sst4, nsst, sst), then apply the fill policy",
+    "ocean_productivity_score": "chlor_a / daily_aoi_avg(chlor_a) + poc / daily_aoi_avg(poc) + nflh / daily_aoi_avg(nflh)",
+    "sustainability_pressure": "fishing_hours / max(ocean_productivity_score, 1e-9); zero when fishing_hours is zero"
+  }
+}

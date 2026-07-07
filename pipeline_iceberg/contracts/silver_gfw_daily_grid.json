@@ -1,0 +1,35 @@
+{
+  "dataset": "gfw_daily_grid",
+  "layer": "silver",
+  "purpose": "Daily apparent fishing activity aggregated to the project 4 km grid.",
+  "grain": "event_date + aoi_id + grid_id",
+  "unique_key": ["event_date", "aoi_id", "grid_id"],
+  "partition_spec": ["event_date"],
+  "fields": {
+    "event_date": {"type": "date", "nullable": false, "timezone": "UTC"},
+    "aoi_id": {"type": "string", "nullable": false},
+    "grid_id": {"type": "string", "nullable": false},
+    "grid_row": {"type": "smallint", "nullable": false},
+    "grid_col": {"type": "smallint", "nullable": false},
+    "presence_hours": {"type": "double", "unit": "hours", "nullable": false},
+    "fishing_hours": {"type": "double", "unit": "hours", "nullable": false},
+    "vessel_presence_count": {
+      "type": "long",
+      "unit": "summed source MMSI count",
+      "nullable": false,
+      "interpretation": "Density proxy only; source category rows may count the same vessel more than once."
+    }
+  },
+  "coordinate_reference_system": "EPSG:4326",
+  "quality_policy": {
+    "required_key_nulls": 0,
+    "duplicate_keys": 0,
+    "required_day_coverage": "every requested event_date",
+    "report_path": "hdfs:///metadata/ocean/silver/<run_id>/<aoi_id>/gfw_daily_grid"
+  },
+  "limitations": [
+    "Fishing hours represent apparent fishing effort, not catch.",
+    "vessel_presence_count is not a globally de-duplicated vessel count."
+  ],
+  "pipeline": "pipeline_iceberg/jobs/silver.py"
+}

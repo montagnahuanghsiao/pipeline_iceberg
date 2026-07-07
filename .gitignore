@@ -1,3 +1,24 @@
-configs/runtime.env
-**/__pycache__/
+# 虛擬環境目錄
+.venv/
+
+# 資料目錄 (通常資料庫或下載的原始數據不需進入版本控制)
+data/
+
+# 設定與快取目錄
+.agents/
+__pycache__/
 *.py[cod]
+
+# Local runtime configuration and credentials
+.env
+.env.*
+!.env.example
+**/runtime.env
+**/*secret*.yaml
+**/*secret*.yml
+!**/*secret*.example.yaml
+!**/*secret*.example.yml
+
+# 額外建議：如果你有輸出日誌或暫存檔，也可以加上
+*.log
+.DS_Store

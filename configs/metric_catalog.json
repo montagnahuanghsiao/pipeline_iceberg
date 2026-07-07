@@ -1,9 +1,0 @@
-[
-  {"product_id":"COMBINED","metric_id":"potential_fishing_score","label":"潛在漁場環境相對高低","unit":"","higher_is_better":true,"min":0,"max":100},
-  {"product_id":"COMBINED","metric_id":"productivity_score","label":"海洋生產力相對高低","unit":"","higher_is_better":true,"min":0,"max":100},
-  {"product_id":"GFW","metric_id":"fishing_hours","label":"漁船活動相對密度","unit":"","higher_is_better":true,"min":0,"max":100},
-  {"product_id":"CHL","metric_id":"chlor_a","label":"葉綠素相對高低","unit":"","higher_is_better":true,"min":0,"max":100},
-  {"product_id":"POC","metric_id":"poc","label":"顆粒有機碳相對高低","unit":"","higher_is_better":true,"min":0,"max":100},
-  {"product_id":"NFLH","metric_id":"nflh","label":"螢光訊號相對高低","unit":"","higher_is_better":true,"min":0,"max":100},
-  {"product_id":"SST","metric_id":"precision_sst","label":"海溫相對高低","unit":"","higher_is_better":true,"min":0,"max":100}
-]

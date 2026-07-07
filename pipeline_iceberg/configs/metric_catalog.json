@@ -1,0 +1,52 @@
+[
+  {
+    "product_id": "CHL",
+    "metric_id": "chlor_a",
+    "label": "葉綠素濃度相對高低",
+    "unit": "",
+    "higher_is_better": true,
+    "interpretation": "higher_relative_value",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "product_id": "SST",
+    "metric_id": "sea_temperature",
+    "label": "海溫相對高低",
+    "unit": "",
+    "higher_is_better": null,
+    "interpretation": "neutral_temperature_band",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "product_id": "PRODUCTIVITY",
+    "metric_id": "ocean_productivity_score",
+    "label": "海洋生產力相對高低",
+    "unit": "",
+    "higher_is_better": true,
+    "interpretation": "higher_proxy_score",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "product_id": "SUSTAINABILITY",
+    "metric_id": "sustainability_pressure",
+    "label": "永續壓力相對高低",
+    "unit": "",
+    "higher_is_better": false,
+    "interpretation": "higher_pressure_is_worse",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "product_id": "GFW",
+    "metric_id": "fishing_hours",
+    "label": "捕魚時數相對高低",
+    "unit": "",
+    "higher_is_better": null,
+    "interpretation": "activity_intensity_only",
+    "min": 0,
+    "max": 100
+  }
+]

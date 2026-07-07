@@ -1,0 +1,35 @@
+{
+  "dataset": "nasa_daily_grid",
+  "layer": "silver",
+  "purpose": "Standardized daily NASA ocean observations aligned to the project 4 km grid.",
+  "grain": "event_date + aoi_id + grid_id",
+  "unique_key": ["event_date", "aoi_id", "grid_id"],
+  "partition_spec": ["event_date"],
+  "fields": {
+    "event_date": {"type": "date", "nullable": false, "timezone": "UTC"},
+    "aoi_id": {"type": "string", "nullable": false},
+    "grid_id": {"type": "string", "nullable": false},
+    "grid_row": {"type": "smallint", "nullable": false},
+    "grid_col": {"type": "smallint", "nullable": false},
+    "chlor_a": {"type": "double", "unit": "mg m^-3", "nullable": true},
+    "poc": {"type": "double", "unit": "mg m^-3", "nullable": true},
+    "nflh": {"type": "double", "unit": "mW cm^-2 um^-1 sr^-1", "nullable": true},
+    "sst": {"type": "double", "unit": "degree_C", "nullable": true},
+    "nsst": {"type": "double", "unit": "degree_C", "nullable": true},
+    "sst4": {"type": "double", "unit": "degree_C", "nullable": true}
+  },
+  "coordinate_reference_system": "EPSG:4326",
+  "quality_policy": {
+    "required_key_nulls": 0,
+    "duplicate_keys": 0,
+    "required_day_coverage": "every requested event_date",
+    "required_metric_groups": [
+      ["chlor_a"],
+      ["poc"],
+      ["nflh"],
+      ["sst", "nsst", "sst4"]
+    ],
+    "report_path": "hdfs:///metadata/ocean/silver/<run_id>/<aoi_id>/nasa_daily_grid"
+  },
+  "pipeline": "pipeline_iceberg/jobs/silver.py"
+}

@@ -1,0 +1,11 @@
+FROM nginx:1.27-alpine
+
+COPY frontend /usr/share/nginx/html
+COPY pipeline_iceberg/deploy/nginx/nginx.conf /etc/nginx/conf.d/default.conf
+COPY pipeline_iceberg/deploy/nginx/runtime-config.js /usr/share/nginx/html/runtime-config.js
+
+# Windows/hostPath sources may carry owner-only directory permissions.
+# Nginx workers must be able to traverse directories and read static assets.
+RUN chmod -R a+rX /usr/share/nginx/html
+
+EXPOSE 8080

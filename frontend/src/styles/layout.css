@@ -1,0 +1,101 @@
+.app-shell {
+  width: min(100%, 1480px);
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.site-header {
+  min-height: 4.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .4rem 0 1rem;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: .72rem;
+  color: var(--muted);
+}
+
+.site-nav {
+  display: none;
+  gap: 1.2rem;
+  align-items: center;
+}
+
+.site-nav a:hover { color: var(--lime); }
+
+.hero {
+  min-height: calc(100vh - 5.75rem);
+  display: grid;
+  align-items: end;
+  gap: 1rem;
+  padding: 2rem 0 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.section {
+  padding: 3.3rem 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.section-heading {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.35rem;
+}
+
+.section-heading h2 {
+  max-width: 980px;
+  margin: 0;
+  font-size: clamp(2.1rem, 7vw, 5rem);
+  line-height: .9;
+  letter-spacing: -.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-layout,
+.analytics-grid,
+.kpi-grid,
+.note-grid {
+  display: grid;
+  gap: .85rem;
+}
+
+.site-footer {
+  padding: 2rem 0 1rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: .68rem;
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+}
+
+.site-footer strong {
+  display: block;
+  color: var(--text);
+  font-size: 1rem;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+@media (min-width: 768px) {
+  .app-shell { padding: 1.2rem 1.5rem; }
+  .site-nav { display: flex; }
+  .hero { min-height: calc(100vh - 6rem); }
+  .dashboard-layout { grid-template-columns: minmax(17rem, .8fr) minmax(0, 2fr); }
+  .analytics-grid, .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .app-shell { padding-inline: 2rem; }
+  .hero { grid-template-columns: 1.1fr .9fr; }
+  .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .dashboard-layout { grid-template-columns: 19rem minmax(0, 1fr); }
+  .note-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .site-footer { flex-direction: row; justify-content: space-between; align-items: end; }
+}

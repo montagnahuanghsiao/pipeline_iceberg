@@ -1,0 +1,64 @@
+{
+  "dataset": "gold_map_metric",
+  "purpose": "Frontend heatmap over NASA-observed ocean grids, selectable by date, AOI, product, metric and resolution.",
+  "grain": "event_date + aoi_id + product_id + metric_id + resolution_km + grid_id",
+  "unique_key": [
+    "event_date",
+    "aoi_id",
+    "product_id",
+    "metric_id",
+    "resolution_km",
+    "grid_id"
+  ],
+  "partition_spec": ["event_date", "aoi_id", "resolution_km"],
+  "required_columns": {
+    "event_date": "date",
+    "aoi_id": "string",
+    "product_id": "string",
+    "metric_id": "string",
+    "resolution_km": "integer",
+    "grid_id": "string",
+    "grid_row": "smallint",
+    "grid_col": "smallint",
+    "metric_value": "double",
+    "relative_score": "double",
+    "display_level": "string",
+    "value_source": "string",
+    "data_coverage": "double",
+    "updated_at_utc": "timestamp",
+    "pipeline_version": "string"
+  },
+  "nullable_columns": ["metric_value", "relative_score"],
+  "products": [
+    ["CHL", "chlor_a"],
+    ["SST", "sea_temperature"],
+    ["PRODUCTIVITY", "ocean_productivity_score"],
+    ["SUSTAINABILITY", "sustainability_pressure"],
+    ["GFW", "fishing_hours"]
+  ],
+  "resolutions_km": [4, 16, 32],
+  "display_contract": {
+    "score_range": [0, 100],
+    "rank_scope": [
+      "event_date",
+      "aoi_id",
+      "product_id",
+      "metric_id",
+      "resolution_km"
+    ],
+    "levels": ["very_low", "low", "medium", "high", "very_high"],
+    "fill_order": [
+      "observed",
+      "grid_<window>d_mean",
+      "neighbor_<window>d_mean",
+      "no_data"
+    ],
+    "gfw_missing_policy": "zero_filled",
+    "note": "metric_value and relative_score are null when value_source=no_data; API and frontend must render no_data separately from zero"
+  },
+  "limitations": [
+    "All scores are within-day AOI percentiles and do not compare absolute values across dates.",
+    "Filled NASA values are display estimates rather than direct observations; values that cannot be filled remain no_data.",
+    "Fishing hours represent apparent fishing effort, not catch."
+  ]
+}

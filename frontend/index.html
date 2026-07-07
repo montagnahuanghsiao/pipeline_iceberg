@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OceanGrid｜海洋相對熱力圖</title>
+  <link rel="stylesheet" href="./src/styles/base.css" />
+  <link rel="stylesheet" href="./vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="./src/styles/layout.css" />
+  <link rel="stylesheet" href="./src/styles/components.css" />
+  <link rel="stylesheet" href="./src/styles/dashboard.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="site-header">
+      <a class="brand" href="#hero" aria-label="OceanGrid 首頁">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span><strong>OceanGrid</strong><small>Fisheries Intelligence</small></span>
+      </a>
+      <nav class="site-nav" aria-label="主要導覽">
+        <a href="#dashboard">互動地圖</a>
+        <a href="#pipeline">資料流</a>
+        <a href="#indicators">指標說明</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" id="hero">
+        <div class="hero__visual" aria-hidden="true">
+          <div class="orbit"></div>
+          <div class="satellite"><span></span></div>
+        </div>
+        <div class="hero__content">
+          <p class="eyebrow">NASA · GFW · Spark · Iceberg</p>
+          <h1>Ocean <span>Grid</span></h1>
+          <p class="hero__lead">
+            依日期、海域、產品與指標查看相對熱區，用同一套「多與少」語言快速辨認環境條件與漁船活動分布。
+          </p>
+          <div class="hero__actions">
+            <a class="button button--primary" href="#dashboard">查看熱力圖</a>
+            <a class="button" href="#pipeline">了解資料流</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="pipeline">
+        <div class="section-heading">
+          <p class="eyebrow">lakehouse architecture</p>
+          <h2>從不可變原始資料，到可快速查詢的 Iceberg Gold</h2>
+        </div>
+        <div class="kpi-grid" id="pipelineKpis"></div>
+      </section>
+
+      <section class="section dashboard-section" id="dashboard">
+        <div class="section-heading">
+          <p class="eyebrow">interactive dashboard</p>
+          <h2>選日期、產品、指標與 AOI，直接比較相對多寡</h2>
+        </div>
+        <div class="dashboard-layout">
+          <aside class="control-panel panel">
+            <div class="field"><label for="dateInput">日期</label><input id="dateInput" type="date" /></div>
+            <div class="field"><label for="aoiSelect">海域 AOI</label><select id="aoiSelect"></select></div>
+            <div class="field"><label for="productSelect">資料產品</label><select id="productSelect"></select></div>
+            <div class="field"><label for="metricSelect">顯示指標</label><select id="metricSelect"></select></div>
+            <div class="field"><label>快速切換</label><div class="segmented" id="metricTabs"></div></div>
+            <div class="status-card">
+              <span class="status-dot"></span>
+              <div><strong id="dataStatusTitle">載入中</strong><p id="dataStatusText">正在讀取 Gold 相對分數。</p></div>
+            </div>
+          </aside>
+
+          <section class="map-panel panel">
+            <div class="panel__header">
+              <div><h3 id="mapTitle">海洋相對熱力圖</h3><p id="mapSubtitle">Gold Iceberg daily grid</p></div>
+              <span class="pill" id="sourceMode">MOCK</span>
+            </div>
+            <div class="map-canvas-wrap">
+              <div id="oceanMap" class="ocean-map" role="img" aria-label="台灣與西北太平洋相對分數熱力圖"></div>
+              <div class="map-callout">
+                <p class="eyebrow">判讀方式</p>
+                <p id="mapInsight">亮色代表同日、同海域內相對較多；不代表漁獲預測。</p>
+                <div class="legend"><span>少</span><i></i><span>多</span></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="analytics-grid">
+          <section class="panel chart-panel">
+            <div class="panel__header"><div><h3>相對分布</h3><p>只呈現多寡等級</p></div></div>
+            <div id="componentBars" class="bars"></div>
+          </section>
+          <section class="panel chart-panel">
+            <div class="panel__header"><div><h3>相對趨勢</h3><p>AOI daily relative score</p></div></div>
+            <canvas id="trendCanvas" class="trend-canvas" aria-label="相對分數趨勢"></canvas>
+          </section>
+        </div>
+      </section>
+
+      <section class="section" id="indicators">
+        <div class="section-heading">
+          <p class="eyebrow">indicator contract</p>
+          <h2>熱力圖表示相對位置，不展示科學數值與單位</h2>
+        </div>
+        <div class="note-grid">
+          <article class="note-card"><h3>五項產品相對高低</h3><p>葉綠素、海溫、生產力、永續壓力及捕魚時數均轉為同日、同海域、同解析度內的百分位分數。</p></article>
+          <article class="note-card"><h3>漁船活動多寡</h3><p>GFW 活動量同樣轉為相對分數；無活動網格固定顯示為最低等級。</p></article>
+          <article class="note-card"><h3>使用限制</h3><p>高分只代表所選範圍內相對較高，不等同漁獲量，也不構成作業建議。</p></article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <strong>OceanGrid</strong>
+      <span>Local Bronze → HDFS Silver → Iceberg Gold → API → Heatmap</span>
+    </footer>
+  </div>
+  <script src="./vendor/leaflet/leaflet.js"></script>
+  <script src="./runtime-config.js"></script>
+  <script type="module" src="./src/js/app.js?v=0.3.0"></script>
+</body>
+</html>
