@@ -1,141 +1,133 @@
-# tkdt：從本機 Bronze 部署到 Flask 地圖
+# OceanGrid pipeline_iceberg Kubernetes 部署 SOP
 
-## 1. 本次起點與完成條件
+本文件記錄目前在 tkdt / Kubernetes 環境部署 `pipeline_iceberg` 的實際流程。
 
-本次不重跑 NASA/GFW 下載。起點是 `tkdt-worker1` 已有：
-
-```text
-/opt/zfs/project/data/bronze/
-├── CHL/
-├── POC/
-├── NFLH/
-├── SST/
-├── NSST/
-├── SST4/
-└── GFW/
-```
-
-完成後資料流為：
+目前採用：
 
 ```text
-local Bronze
+本機 Bronze Parquet
   -> HDFS Bronze
-  -> Spark on YARN Silver (taiwan MVP)
-  -> Gold Iceberg HadoopCatalog
-  -> Spark serving export
-  -> local versioned Parquet snapshot
-  -> Flask + DuckDB
-  -> Nginx frontend
+  -> Spark on YARN Silver
+  -> Spark on YARN Gold Iceberg
+  -> Spark Serving Export
+  -> 本機 Serving Parquet Snapshot
+  -> Flask API
+  -> Nginx Frontend
+  -> Windows browser via SSH tunnel
 ```
 
-不使用 Trino，也不使用 Hive Metastore。Iceberg 的正式表名是
-`lake.ocean.gold_*`；HadoopCatalog 直接以 HDFS warehouse 管理 metadata。
+目前不使用 Trino，也不使用 Hive Metastore。Gold 層使用 Iceberg HadoopCatalog：
 
-## 2. 節點責任
+```text
+catalog: lake
+namespace: ocean
+warehouse: hdfs:///dataset/ocean/warehouse
 
-本專案有兩種巢狀叢集資源規格：
+tables:
+  lake.ocean.gold_daily_grid_features
+  lake.ocean.gold_map_metric
+  lake.ocean.gold_daily_metric_summary
+```
 
-| Pipeline | control-plane | worker |
-|---|---:|---:|
-| `pipeline_iceberg` | 5 GiB / 4 cores | 6 GiB / 4 cores |
-| `pipeline_ispan` | 5 GiB / 8 cores | 14 GiB / 8 cores |
+Iceberg 管理 table metadata、snapshot、manifest、partition 與覆寫一致性；底層資料檔案仍是 Parquet。
 
-本文件與本目錄設定只套用 `pipeline_iceberg`。目前 repository 中沒有
-`pipeline_ispan/`，因此不共用或推測其 Spark 參數。
+## 1. 目前連線限制
 
-| 位置 | 執行內容 |
-|---|---|
-| `tkadm`（或可操作 Docker、kubectl 的管理節點） | build/push image、套用 YAML、看 Pod log |
-| `tkdt-worker1` | 保存 `/opt/zfs/project` 與 `/opt/zfs/sys`；Kubernetes driver Pod 固定在此 |
-| YARN ResourceManager/NodeManager 節點 | 分配 Spark executor container；不是 Kubernetes Pod |
-| `dtadm`（若它是 Hadoop client 節點） | 用 `hdfs dfs`、`yarn` 做叢集外驗證 |
+已驗證 Kubernetes 內部可通：
 
-Kubernetes Node 是既有機器；Job controller 建立 Pod，scheduler 再把 Pod 排到
-Node。Spark driver 在 Pod 內呼叫 YARN，YARN 另外建立 executor container。
+```bash
+curl -I http://172.22.136.4:30801/
+curl -I http://10.244.137.141:8080/
+curl -I http://ocean-frontend:8080/
+```
 
-## 3. 放置專案與先核對實機版本
+但 Windows 不能直接連：
 
-在保存 ZFS 專案的節點：
+```text
+http://192.168.44.139:30801/
+http://172.22.136.x:30801/
+```
+
+因此 demo 使用 SSH tunnel。這不是前端或 Service 壞掉，而是 tkdt 內部 NodePort 沒有直接暴露到 Windows 可達的 VM 網卡。
+
+## 2. 確認 Bronze
+
+在 `dtadm`：
 
 ```bash
 cd /opt/zfs/project
-find data/bronze -type f -name '*.parquet' | head
+
 for p in CHL POC NFLH SST NSST SST4 GFW; do
   printf '%-5s ' "$p"
   find "data/bronze/$p" -type f -name '*.parquet' | wc -l
 done
-
-ls -ld /opt/zfs/sys/hadoop-* /opt/zfs/sys/spark-*
-find /opt/zfs/sys/spark-3.5.8-bin-hadoop3/jars \
-  -name 'iceberg-spark-runtime-3.5_2.12-*.jar'
 ```
 
-本版 YAML 預設：
+## 3. 建立與推送映像
 
-```text
-HADOOP_HOME=/opt/zfs/sys/hadoop-3.5.0
-SPARK_HOME=/opt/zfs/sys/spark-3.5.8-bin-hadoop3
-Iceberg runtime=3.5_2.12-1.11.0
-Java=17（由 spark-client image 提供 /opt/java/openjdk）
-```
-
-若實機目錄不同，先改
-`pipeline_iceberg/deploy/kubernetes/00-configmap.yaml` 的 `HADOOP_HOME`、
-`HADOOP_CONF_DIR`、`YARN_CONF_DIR`、`SPARK_HOME`、`ICEBERG_JAR`，不可只改其中
-一個路徑。
-
-確認 YARN 容器限制：
+在可以執行 Docker 並推送私有 Registry 的機器：
 
 ```bash
-/opt/zfs/sys/hadoop-3.5.0/bin/yarn getconf \
-  -confKey yarn.scheduler.maximum-allocation-mb
-/opt/zfs/sys/hadoop-3.5.0/bin/yarn getconf \
-  -confKey yarn.scheduler.maximum-allocation-vcores
-```
+cd /opt/zfs/project
 
-`pipeline_iceberg` 的 MVP 設定為 2 個 executor，每個 `1g + 512m overhead`、
-1 core；Driver heap 為 `1g`，Kubernetes Driver Pod limit 為 `2Gi`。Silver、
-Gold與Iceberg維護Driver排在`dt=admin` control-plane；YARN executor仍由
-ResourceManager分配到worker。Serving為了把本機快照放到API所在的hostPath，
-仍固定在`tkdt-worker1`。
-
-## 4. 建置並推送三個映像
-
-在 `/opt/zfs/project` 執行：
-
-```bash
 docker build \
   -f pipeline_iceberg/deploy/docker/Dockerfile.spark-client \
   -t dkreg.taroko:5000/ocean-spark-client:3.5.8 \
   pipeline_iceberg
+
+docker push dkreg.taroko:5000/ocean-spark-client:3.5.8
 
 docker build \
   -f pipeline_iceberg/deploy/docker/Dockerfile.api \
   -t dkreg.taroko:5000/ocean-flask-api:0.3.0 \
   pipeline_iceberg
 
-docker build \
+docker push dkreg.taroko:5000/ocean-flask-api:0.3.0
+
+docker build --no-cache \
   -f pipeline_iceberg/deploy/docker/Dockerfile.frontend \
-  -t dkreg.taroko:5000/ocean-frontend:0.3.0 \
+  -t dkreg.taroko:5000/ocean-frontend:0.4.5 \
   .
 
-docker push dkreg.taroko:5000/ocean-spark-client:3.5.8
-docker push dkreg.taroko:5000/ocean-flask-api:0.3.0
-docker push dkreg.taroko:5000/ocean-frontend:0.3.0
+docker push dkreg.taroko:5000/ocean-frontend:0.4.5
 ```
 
-`ocean-collector` 這次不需建置，因為 Bronze 已存在。未來要重新下載才使用
-`01-bronze-job.yaml`。
+前端請使用 `ocean-frontend:0.4.5`。
 
-## 5. 套用設定並跑 preflight
+`0.4.5` 包含：
 
-在可操作 `kubectl` 的管理節點：
+- Leaflet + 本機 GeoJSON 地圖。
+- Nginx `/api/` proxy 到 Flask。
+- 靜態 CSS / JS 檔案正確回傳，不會被 SPA fallback 成 HTML。
+- 修正 `apiBaseUrl: "/api/v1"` 時，瀏覽器 `new URL()` 產生 `Invalid URL` 的問題。
+- 前端 module query string 更新，避免瀏覽器繼續吃舊 JS。
+
+不建議前端繼續使用 `0.3.0`。`0.3.0` 是舊版前端 image，通常不包含上述修正。即使重新 build 同一個 `0.3.0` tag，Kubernetes 的 `imagePullPolicy: IfNotPresent` 和瀏覽器快取也可能讓你繼續看到舊內容。
+
+Flask API 目前可以繼續使用 `ocean-flask-api:0.3.0`，因為這次 `Failed to construct 'URL': Invalid URL` 發生在前端，不是 API。
+
+## 4. 套用 ConfigMap
 
 ```bash
 cd /opt/zfs/project
-kubectl get node tkdt-worker1
-kubectl apply -f pipeline_iceberg/deploy/kubernetes/00-configmap.yaml
 
+kubectl apply -f pipeline_iceberg/deploy/kubernetes/00-configmap.yaml
+kubectl get configmap ocean-pipeline-config -n dt -o yaml
+```
+
+重要設定：
+
+```text
+HDFS_BRONZE_ROOT=hdfs:///raw/ocean/bronze
+HDFS_SILVER_ROOT=hdfs:///elt/ocean/silver
+ICEBERG_WAREHOUSE=hdfs:///dataset/ocean/warehouse
+HDFS_SERVING_ROOT=hdfs:///dataset/ocean/serving
+LOCAL_SERVING_CURRENT=/opt/zfs/project/data/serving/current
+```
+
+## 5. Preflight
+
+```bash
 kubectl delete job ocean-pipeline-preflight -n dt --ignore-not-found
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/00-preflight-job.yaml
 kubectl logs -n dt -f job/ocean-pipeline-preflight
@@ -143,23 +135,15 @@ kubectl wait -n dt --for=condition=complete \
   job/ocean-pipeline-preflight --timeout=30m
 ```
 
-成功訊號為 `PREFLIGHT status=success`。它會檢查七個 Bronze 產品、Hadoop/Spark
-執行檔、Iceberg JAR、YARN Node，並實際建立 HDFS 目錄與寫入/刪除 probe。
+必須看到：
 
-若 Pod 一直 Pending：
-
-```bash
-kubectl describe pod -n dt \
-  -l job-name=ocean-pipeline-preflight
-kubectl get nodes --show-labels
+```text
+PREFLIGHT status=success
 ```
 
-先確認 `tkdt-worker1` 名稱與 nodeSelector 完全一致。
+## 6. 上傳 Bronze 到 HDFS
 
-## 6. Bronze：本機上傳 HDFS
-
-執行的 YAML：
-`pipeline_iceberg/deploy/kubernetes/02-upload-job.yaml`
+如果 Bronze 已經在 `/opt/zfs/project/data/bronze`：
 
 ```bash
 kubectl delete job ocean-bronze-upload -n dt --ignore-not-found
@@ -169,17 +153,7 @@ kubectl wait -n dt --for=condition=complete \
   job/ocean-bronze-upload --timeout=6h
 ```
 
-腳本只比對 ConfigMap 的 `START_DATE`～`END_DATE`，並寫成：
-
-```text
-hdfs:///raw/ocean/bronze/<PRODUCT>/<YEAR>/<file>.parquet
-hdfs:///metadata/ocean/bronze/bronze_upload_<run_id>.tsv
-```
-
-同檔名採 `put -f`，所以重跑不會累積重複檔案。若某產品在日期範圍內一個檔案
-都沒有，Job 會非零失敗。
-
-在 Hadoop client 節點驗證：
+驗證：
 
 ```bash
 hdfs dfs -count -h /raw/ocean/bronze/CHL/2024
@@ -187,72 +161,36 @@ hdfs dfs -count -h /raw/ocean/bronze/GFW/2024
 hdfs dfs -ls /metadata/ocean/bronze | tail
 ```
 
-## 7. Silver：台灣 AOI 清洗
-
-執行的 YAML：
-`pipeline_iceberg/deploy/kubernetes/03-silver-job.yaml`
+## 7. Silver
 
 ```bash
 kubectl delete job ocean-silver -n dt --ignore-not-found
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/03-silver-job.yaml
 kubectl logs -n dt -f job/ocean-silver
-kubectl wait -n dt --for=condition=complete job/ocean-silver --timeout=12h
+kubectl wait -n dt --for=condition=complete \
+  job/ocean-silver --timeout=12h
 ```
-
-目前`AOI_IDS=taiwan`會建立：
-
-```text
-hdfs:///elt/ocean/silver/taiwan/nasa_daily_grid/
-hdfs:///elt/ocean/silver/taiwan/gfw_daily_grid/
-```
-
-MVP ConfigMap只啟用7日範圍。每次Silver執行另寫：
-
-```text
-hdfs:///metadata/ocean/silver/<run_id>/<aoi_id>/nasa_daily_grid/
-hdfs:///metadata/ocean/silver/<run_id>/<aoi_id>/gfw_daily_grid/
-```
-
-GFW Silver保留`presence_hours`、`fishing_hours`及
-`vessel_presence_count`。最後一項是來源`mmsi_present`加總代理值，可能因船籍或
-漁具分類重複，不能當成精確去重船數。
 
 驗證：
 
 ```bash
 hdfs dfs -count -h /elt/ocean/silver/taiwan/nasa_daily_grid
 hdfs dfs -count -h /elt/ocean/silver/taiwan/gfw_daily_grid
+hdfs dfs -count -h /elt/ocean/silver/northwest_pacific/nasa_daily_grid
+hdfs dfs -count -h /elt/ocean/silver/northwest_pacific/gfw_daily_grid
 ```
 
-## 8. Gold：寫入 Iceberg
-
-執行的 YAML：
-`pipeline_iceberg/deploy/kubernetes/04-gold-job.yaml`
+## 8. Gold Iceberg
 
 ```bash
 kubectl delete job ocean-gold -n dt --ignore-not-found
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/04-gold-job.yaml
 kubectl logs -n dt -f job/ocean-gold
-kubectl wait -n dt --for=condition=complete job/ocean-gold --timeout=12h
+kubectl wait -n dt --for=condition=complete \
+  job/ocean-gold --timeout=12h
 ```
 
-Gold 表：
-
-```text
-lake.ocean.gold_daily_grid_features
-lake.ocean.gold_map_metric
-lake.ocean.gold_daily_metric_summary
-```
-
-HadoopCatalog 實體根目錄是：
-
-```text
-hdfs:///dataset/ocean/warehouse/ocean/
-```
-
-不保證會出現 Hive 風格的 `ocean.db/`，因此程式不得依賴該字串。
-
-快速確認：
+驗證：
 
 ```bash
 hdfs dfs -ls /dataset/ocean/warehouse/ocean
@@ -260,10 +198,17 @@ hdfs dfs -find /dataset/ocean/warehouse/ocean \
   -path '*/metadata/*.metadata.json' | head
 ```
 
-## 9. Serving：從 Gold 匯出 Flask 快照
+應出現：
 
-執行的 YAML：
-`pipeline_iceberg/deploy/kubernetes/05-serving-job.yaml`
+```text
+gold_daily_grid_features
+gold_map_metric
+gold_daily_metric_summary
+```
+
+## 9. Serving Export
+
+Serving job 會從 Gold Iceberg 匯出前端查詢用的窄欄位 Parquet：
 
 ```bash
 kubectl delete job ocean-serving-export -n dt --ignore-not-found
@@ -273,26 +218,24 @@ kubectl wait -n dt --for=condition=complete \
   job/ocean-serving-export --timeout=6h
 ```
 
-Spark 先寫 HDFS：
+成功 log 範例：
 
 ```text
-hdfs:///dataset/ocean/serving/gold_map_metric/
-hdfs:///dataset/ocean/serving/gold_daily_metric_summary/
+SERVING_EXPORT release=2024_01_01_07 status=starting
+SERVING_EXPORT release=2024_01_01_07 current=/opt/zfs/project/data/serving/releases/2024_01_01_07 status=success
 ```
 
-再下載到固定執行節點：
+驗證：
 
-```text
-/opt/zfs/project/data/serving/releases/2024_12_01_07/
-/opt/zfs/project/data/serving/current -> releases/2024_12_01_07
+```bash
+hdfs dfs -count -h /dataset/ocean/serving/gold_map_metric
+hdfs dfs -count -h /dataset/ocean/serving/gold_daily_metric_summary
+
+find /opt/zfs/project/data/serving/current \
+  -type f -name '*.parquet' | head
 ```
 
-快照完整下載並驗證有 Parquet 後才切換 `current`，避免 Flask 看見半成品。
-
-## 10. 部署 Flask API
-
-執行的 YAML：
-`pipeline_iceberg/deploy/kubernetes/07-flask-api.yaml`
+## 10. Flask API
 
 ```bash
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/07-flask-api.yaml
@@ -301,7 +244,7 @@ kubectl get pod,svc -n dt -l app=ocean-flask-api
 kubectl logs -n dt deployment/ocean-flask-api
 ```
 
-叢集內測試：
+叢集內驗證：
 
 ```bash
 kubectl run ocean-api-curl -n dt --rm -it --restart=Never \
@@ -309,63 +252,154 @@ kubectl run ocean-api-curl -n dt --rm -it --restart=Never \
   curl -sS http://ocean-flask-api:8000/healthz
 ```
 
-若叢集不能拉 `curlimages/curl`，從可連到 NodePort 的機器測：
+應回傳：
 
-```bash
-curl http://<任一可達K8S_NODE_IP>:30800/healthz
-curl 'http://<任一可達K8S_NODE_IP>:30800/api/v1/gold/daily-grid?date=2024-12-12&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
+```json
+{"status":"ok"}
 ```
 
-API Pod 固定在 `tkdt-worker1`，因為 serving snapshot 目前是該 Node 的 hostPath。
-若要多副本或跨 Node，下一階段應把 serving snapshot 改成 RWX PVC 或物件儲存。
+也可在 `dtadm` 直接測：
 
-## 11. 部署前端
+```bash
+curl -sS http://ocean-flask-api:8000/healthz
+```
 
-執行的 YAML：
-`pipeline_iceberg/deploy/kubernetes/08-frontend.yaml`
+## 11. Frontend
 
 ```bash
 kubectl apply -f pipeline_iceberg/deploy/kubernetes/08-frontend.yaml
 kubectl rollout status -n dt deployment/ocean-frontend --timeout=5m
 kubectl get svc ocean-frontend -n dt
+kubectl get pod -n dt -l app=ocean-frontend -o wide
 ```
 
-瀏覽：
+目前 frontend Service 是 NodePort：
 
 ```text
-http://<任一可達K8S_NODE_IP>:30801/
+ocean-frontend  NodePort  8080:30801/TCP
 ```
 
-前端 Nginx 將 `/api/` 代理到 `ocean-flask-api.dt.svc.cluster.local:8000`，
-所以瀏覽器不需要知道 Flask Pod IP。原始 `frontend/runtime-config.js` 仍使用
-mock；Kubernetes frontend image 會以
-`pipeline_iceberg/deploy/nginx/runtime-config.js` 切到 API。
-
-## 12. 定期維護（資料驗證完成後才啟用）
+在 `dtadm` 驗證：
 
 ```bash
-kubectl apply \
-  -f pipeline_iceberg/deploy/kubernetes/06-maintenance-cronjob.yaml
+curl -I http://ocean-frontend:8080/
+curl -I http://172.22.136.4:30801/
+curl -sS http://ocean-frontend:8080/runtime-config.js
+
+curl -sS -o /tmp/base.css \
+  -w 'status=%{http_code} type=%{content_type} size=%{size_download}\n' \
+  http://ocean-frontend:8080/src/styles/base.css
+head -3 /tmp/base.css
 ```
 
-先完成一個月端到端測試，再啟用 snapshot expire。不要在仍需回溯除錯時過早
-刪除 Iceberg 歷史 snapshot。
+CSS 應該看到：
 
-## 13. 每次月份重跑順序
+```text
+status=200 type=text/css ...
+:root {
+  color-scheme: dark;
+```
 
-1. 修改 `00-configmap.yaml` 的 `START_DATE`、`END_DATE`、
-   `SERVING_RELEASE_ID`。
-2. `kubectl apply` ConfigMap。
-3. 依序刪除並重建 upload、silver、gold、serving Job。
-4. API 不需重建；`current` symlink 切換後，新 request 會讀新快照。
-5. 驗證筆數、日期分區、API 回傳與地圖後才視為完成。
-
-若 Job 失敗：
+API proxy 驗證：
 
 ```bash
-kubectl get pod -n dt -l job-name=<JOB_NAME>
-kubectl describe pod -n dt -l job-name=<JOB_NAME>
-kubectl logs -n dt job/<JOB_NAME>
+curl -sS http://ocean-frontend:8080/api/v1/catalog
 ```
 
-不要直接跳到下一層；下游成功不代表上游資料正確。
+應回傳 AOI、metrics、resolutions。
+
+## 12. Windows 瀏覽器連線方式：SSH tunnel
+
+Windows 已可連到 VM：
+
+```text
+192.168.44.139:22
+```
+
+但 Windows 不能直接連：
+
+```text
+192.168.44.139:30801
+172.22.136.x:30801
+```
+
+因此用 SSH tunnel。
+
+在 Windows PowerShell 開一個新視窗，不要關：
+
+```powershell
+ssh -L 18081:172.22.136.4:30801 bigred@192.168.44.139
+```
+
+登入後保持 SSH 視窗開著。
+
+Windows 瀏覽器開：
+
+```text
+http://localhost:18081/
+```
+
+流量路徑：
+
+```text
+Windows browser
+  -> localhost:18081
+  -> SSH tunnel
+  -> 192.168.44.139
+  -> 172.22.136.4:30801
+  -> ocean-frontend NodePort
+  -> frontend Nginx
+  -> /api/v1 proxy
+  -> ocean-flask-api:8000
+```
+
+如果 frontend Pod 換到不同 worker，先查：
+
+```bash
+kubectl get pod -n dt -l app=ocean-frontend -o wide
+kubectl get node -o wide
+```
+
+再把 tunnel 目的地換成該 Pod 所在 Node 的 `INTERNAL-IP:30801`。例如：
+
+```powershell
+ssh -L 18081:172.22.136.3:30801 bigred@192.168.44.139
+ssh -L 18081:172.22.136.4:30801 bigred@192.168.44.139
+ssh -L 18081:172.22.136.5:30801 bigred@192.168.44.139
+```
+
+NodePort 理論上任一 K8S Node IP 都可用；實務上使用已驗證可通的 Node IP 即可。
+
+## 13. 查詢失敗排查
+
+如果畫面顯示：
+
+```text
+Failed to construct 'URL': Invalid URL
+```
+
+代表前端 JavaScript 組 URL 失敗，API request 還沒送到 Flask。新版前端應使用：
+
+```js
+new URL(`${APP_CONFIG.apiBaseUrl}${path}`, window.location.origin)
+```
+
+部署後驗證：
+
+```bash
+curl -sS http://ocean-frontend:8080/runtime-config.js
+curl -sS http://ocean-frontend:8080/api/v1/catalog
+curl -i 'http://ocean-frontend:8080/api/v1/gold/daily-grid?date=2024-12-03&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
+```
+
+如果 API 回 `404 no matching grid partition`，代表前端已經能打 API，下一步才是檢查該日期、AOI、產品、指標、解析度在 serving snapshot 裡是否有資料。
+
+## 14. Iceberg Maintenance
+
+完整驗證一個月資料後，再啟用 Iceberg maintenance：
+
+```bash
+kubectl apply -f pipeline_iceberg/deploy/kubernetes/06-maintenance-cronjob.yaml
+```
+
+Demo 驗證前不建議先開 maintenance，避免除錯時多一個變因。

@@ -1,9 +1,9 @@
 import { AOIS, APP_CONFIG, METRICS, PRODUCTS } from "./config.js";
-import { createOceanApi } from "./api/client.js?v=0.3.0";
+import { createOceanApi } from "./api/client.js?v=0.4.5";
 import { state, setState, subscribe } from "./state.js";
 import { fillSelect, renderMetricTabs } from "./components/controls.js";
 import { renderPipelineKpis } from "./components/kpiCards.js";
-import { renderComponentBars } from "./components/bars.js?v=0.3.0";
+import { renderComponentBars } from "./components/bars.js?v=0.4.5";
 import { createOceanMap } from "./components/leafletMap.js";
 import { drawTrend } from "./components/trendCanvas.js";
 
