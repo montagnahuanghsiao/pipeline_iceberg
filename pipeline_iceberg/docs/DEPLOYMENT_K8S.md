@@ -63,6 +63,32 @@ for p in CHL POC NFLH SST NSST SST4 GFW; do
 done
 ```
 
+本機 Bronze 建議先整理成月分區。這不是重新爬蟲，只是把既有每日 Parquet 移到 `year=YYYY/month=MM` 目錄：
+
+```text
+/opt/zfs/project/data/bronze/CHL/year=2024/month=01/*.parquet
+/opt/zfs/project/data/bronze/POC/year=2024/month=01/*.parquet
+/opt/zfs/project/data/bronze/GFW/year=2024/month=01/*.parquet
+```
+
+若先在 Windows 端整理本機專案，可執行：
+
+```powershell
+cd C:\Users\yah51\Desktop\project
+
+# 先預演，不會搬檔
+.\pipeline_iceberg\scripts\Convert-LocalBronzeToMonthlyLayout.ps1 -WhatIf
+
+# 確認輸出正確後再搬檔
+.\pipeline_iceberg\scripts\Convert-LocalBronzeToMonthlyLayout.ps1
+```
+
+如果想先複製、不移動原檔：
+
+```powershell
+.\pipeline_iceberg\scripts\Convert-LocalBronzeToMonthlyLayout.ps1 -Mode Copy
+```
+
 ## 3. 建立與推送映像
 
 在可以執行 Docker 並推送私有 Registry 的機器：
@@ -79,32 +105,33 @@ docker push dkreg.taroko:5000/ocean-spark-client:3.5.8
 
 docker build \
   -f pipeline_iceberg/deploy/docker/Dockerfile.api \
-  -t dkreg.taroko:5000/ocean-flask-api:0.3.0 \
+  -t dkreg.taroko:5000/ocean-flask-api:0.3.1 \
   pipeline_iceberg
 
-docker push dkreg.taroko:5000/ocean-flask-api:0.3.0
+docker push dkreg.taroko:5000/ocean-flask-api:0.3.1
 
 docker build --no-cache \
   -f pipeline_iceberg/deploy/docker/Dockerfile.frontend \
-  -t dkreg.taroko:5000/ocean-frontend:0.4.5 \
+  -t dkreg.taroko:5000/ocean-frontend:0.4.6 \
   .
 
-docker push dkreg.taroko:5000/ocean-frontend:0.4.5
+docker push dkreg.taroko:5000/ocean-frontend:0.4.6
 ```
 
-前端請使用 `ocean-frontend:0.4.5`。
+前端請使用 `ocean-frontend:0.4.6`。
 
-`0.4.5` 包含：
+`0.4.6` 包含：
 
 - Leaflet + 本機 GeoJSON 地圖。
 - Nginx `/api/` proxy 到 Flask。
 - 靜態 CSS / JS 檔案正確回傳，不會被 SPA fallback 成 HTML。
 - 修正 `apiBaseUrl: "/api/v1"` 時，瀏覽器 `new URL()` 產生 `Invalid URL` 的問題。
 - 前端 module query string 更新，避免瀏覽器繼續吃舊 JS。
+- 透過 API availability 只使用 serving/current 裡實際存在的日期。
 
 不建議前端繼續使用 `0.3.0`。`0.3.0` 是舊版前端 image，通常不包含上述修正。即使重新 build 同一個 `0.3.0` tag，Kubernetes 的 `imagePullPolicy: IfNotPresent` 和瀏覽器快取也可能讓你繼續看到舊內容。
 
-Flask API 目前可以繼續使用 `ocean-flask-api:0.3.0`，因為這次 `Failed to construct 'URL': Invalid URL` 發生在前端，不是 API。
+Flask API 請使用 `ocean-flask-api:0.3.1`，此版本新增 `/api/v1/availability`，讓前端只使用 serving/current 內實際存在的日期。
 
 ## 4. 套用 ConfigMap
 
@@ -118,6 +145,10 @@ kubectl get configmap ocean-pipeline-config -n dt -o yaml
 重要設定：
 
 ```text
+BATCH_ID=2024_01
+START_DATE=2024-01-01
+END_DATE=2024-01-31
+AOI_IDS=taiwan,northwest_pacific
 HDFS_BRONZE_ROOT=hdfs:///raw/ocean/bronze
 HDFS_SILVER_ROOT=hdfs:///elt/ocean/silver
 ICEBERG_WAREHOUSE=hdfs:///dataset/ocean/warehouse
@@ -143,7 +174,7 @@ PREFLIGHT status=success
 
 ## 6. 上傳 Bronze 到 HDFS
 
-如果 Bronze 已經在 `/opt/zfs/project/data/bronze`：
+如果 Bronze 已經在 `/opt/zfs/project/data/bronze`，且已整理為 `product/year=YYYY/month=MM`：
 
 ```bash
 kubectl delete job ocean-bronze-upload -n dt --ignore-not-found
@@ -156,8 +187,8 @@ kubectl wait -n dt --for=condition=complete \
 驗證：
 
 ```bash
-hdfs dfs -count -h /raw/ocean/bronze/CHL/2024
-hdfs dfs -count -h /raw/ocean/bronze/GFW/2024
+hdfs dfs -count -h /raw/ocean/bronze/CHL/year=2024/month=01
+hdfs dfs -count -h /raw/ocean/bronze/GFW/year=2024/month=01
 hdfs dfs -ls /metadata/ocean/bronze | tail
 ```
 
@@ -208,7 +239,17 @@ gold_daily_metric_summary
 
 ## 9. Serving Export
 
-Serving job 會從 Gold Iceberg 匯出前端查詢用的窄欄位 Parquet：
+Serving job 會從 Gold Iceberg 匯出本次 batch 的前端查詢用窄欄位 Parquet，然後在 local serving 端執行 partition merge：
+
+```text
+舊 /opt/zfs/project/data/serving/current
+  + 本次 batch partitions
+  -> 新 release staging
+  -> 同 event_date/aoi_id/resolution_km partition 以新 batch 覆蓋
+  -> 驗證成功後切換 current symlink
+```
+
+這樣逐月補資料時，前端仍可同時查既有月份、台灣周邊與西北太平洋。
 
 ```bash
 kubectl delete job ocean-serving-export -n dt --ignore-not-found
@@ -221,15 +262,16 @@ kubectl wait -n dt --for=condition=complete \
 成功 log 範例：
 
 ```text
-SERVING_EXPORT release=2024_01_01_07 status=starting
-SERVING_EXPORT release=2024_01_01_07 current=/opt/zfs/project/data/serving/releases/2024_01_01_07 status=success
+SERVING_EXPORT release=2024_01 status=starting
+SERVING_MERGE dataset=gold_map_metric partition=event_date=2024-01-01/aoi_id=taiwan/resolution_km=4 status=merged
+SERVING_EXPORT release=2024_01 batch_hdfs=hdfs:///dataset/ocean/serving/batches/2024_01 current=/opt/zfs/project/data/serving/releases/2024_01 status=success
 ```
 
 驗證：
 
 ```bash
-hdfs dfs -count -h /dataset/ocean/serving/gold_map_metric
-hdfs dfs -count -h /dataset/ocean/serving/gold_daily_metric_summary
+hdfs dfs -count -h /dataset/ocean/serving/batches/2024_01/gold_map_metric
+hdfs dfs -count -h /dataset/ocean/serving/batches/2024_01/gold_daily_metric_summary
 
 find /opt/zfs/project/data/serving/current \
   -type f -name '*.parquet' | head
@@ -304,9 +346,10 @@ API proxy 驗證：
 
 ```bash
 curl -sS http://ocean-frontend:8080/api/v1/catalog
+curl -sS 'http://ocean-frontend:8080/api/v1/availability?aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
 ```
 
-應回傳 AOI、metrics、resolutions。
+第一個應回傳 AOI、metrics、resolutions；第二個應回傳 serving/current 裡可查詢的日期。前端會用 availability 自動限制日期，避免選到沒有資料的分區。
 
 ## 12. Windows 瀏覽器連線方式：SSH tunnel
 
@@ -389,7 +432,8 @@ new URL(`${APP_CONFIG.apiBaseUrl}${path}`, window.location.origin)
 ```bash
 curl -sS http://ocean-frontend:8080/runtime-config.js
 curl -sS http://ocean-frontend:8080/api/v1/catalog
-curl -i 'http://ocean-frontend:8080/api/v1/gold/daily-grid?date=2024-12-03&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
+curl -sS 'http://ocean-frontend:8080/api/v1/availability?aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
+curl -i 'http://ocean-frontend:8080/api/v1/gold/daily-grid?date=2024-01-03&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
 ```
 
 如果 API 回 `404 no matching grid partition`，代表前端已經能打 API，下一步才是檢查該日期、AOI、產品、指標、解析度在 serving snapshot 裡是否有資料。

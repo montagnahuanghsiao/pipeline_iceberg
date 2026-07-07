@@ -16,7 +16,7 @@ if (( end_epoch < start_epoch )); then
   exit 2
 fi
 
-run_id="bronze_upload_$(date -u +%Y%m%dT%H%M%SZ)"
+run_id="bronze_upload_${BATCH_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 manifest="$(mktemp)"
 trap 'rm -f "${manifest}"' EXIT
 printf 'run_id\tproduct\tevent_date\tlocal_file\thdfs_file\tbytes\tsha256\n' > "${manifest}"
@@ -36,11 +36,18 @@ for product in CHL NFLH POC SST NSST SST4 GFW; do
     day="$(date -u -d "@${current_epoch}" +%F)"
     compact_day="${day//-/}"
     year="${day:0:4}"
-    target_dir="${HDFS_BRONZE_ROOT}/${product}/${year}"
+    month="${day:5:2}"
+    source_dir="${product_root}/year=${year}/month=${month}"
+    target_dir="${HDFS_BRONZE_ROOT}/${product}/year=${year}/month=${month}"
     "${HDFS}" dfs -mkdir -p "${target_dir}"
 
+    if [[ ! -d "${source_dir}" ]]; then
+      echo "ERROR: Bronze month directory not found: ${source_dir}" >&2
+      exit 4
+    fi
+
     mapfile -d '' day_files < <(
-      find "${product_root}" -type f \
+      find "${source_dir}" -maxdepth 1 -type f \
         \( -name "*${compact_day}*.parquet" -o -name "*${day}*.parquet" \) \
         -print0
     )

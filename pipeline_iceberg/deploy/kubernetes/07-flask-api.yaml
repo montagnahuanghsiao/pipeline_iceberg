@@ -26,7 +26,7 @@ spec:
       securityContext: {runAsUser: 1000, runAsGroup: 1001, fsGroup: 1001}
       containers:
         - name: api
-          image: dkreg.taroko:5000/ocean-flask-api:0.3.0
+          image: dkreg.taroko:5000/ocean-flask-api:0.3.1
           imagePullPolicy: IfNotPresent
           envFrom: [{configMapRef: {name: ocean-pipeline-config}}]
           ports:

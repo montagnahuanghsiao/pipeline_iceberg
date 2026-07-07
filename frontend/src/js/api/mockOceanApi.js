@@ -67,6 +67,13 @@ function buildGrid({ date, aoi, product, metric, resolution = 4 }) {
   });
 }
 export const mockOceanApi = {
+  async getAvailability(filters) {
+    return {
+      ...filters,
+      dates: Array.from({ length: 31 }, (_, index) => `2024-12-${String(index + 1).padStart(2, "0")}`),
+      partitions: [],
+    };
+  },
   async getDailyGrid(filters) { return { ...filters, source: "mock", grid: buildGrid(filters) }; },
   async getSummary(filters) {
     const grid = buildGrid(filters); const values = grid.map((cell) => cell.value);

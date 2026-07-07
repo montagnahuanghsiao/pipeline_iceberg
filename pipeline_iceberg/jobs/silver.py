@@ -41,6 +41,28 @@ def incremental(df: DataFrame, options) -> DataFrame:
     return df.where(F.col("event_date").between(F.lit(options.start_date), F.lit(options.end_date)))
 
 
+def batch_month_paths(root: str, product: str, start_date: date, end_date: date) -> list[str]:
+    """Return product/year=YYYY/month=MM paths touched by this batch."""
+    paths: list[str] = []
+    year = start_date.year
+    month = start_date.month
+    while (year, month) <= (end_date.year, end_date.month):
+        paths.append(f"{root.rstrip('/')}/{product}/year={year:04d}/month={month:02d}")
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+    return paths
+
+
+def round_columns(df: DataFrame, digits: int, columns: list[str]) -> DataFrame:
+    result = df
+    for column in columns:
+        result = result.withColumn(column, F.round(F.col(column).cast("double"), digits))
+    return result
+
+
 def write_partitioned(df: DataFrame, target: str, options) -> None:
     staged = df.withColumn("_write_shard", F.pmod(F.xxhash64("grid_id"), F.lit(options.write_shards)))
     (
@@ -182,7 +204,14 @@ def main():
     try:
         nasa_long = []
         for product, value_col in PRODUCT_COLUMNS.items():
-            raw = spark.read.option("recursiveFileLookup", "true").parquet(f"{options.bronze_root.rstrip('/')}/{product}")
+            raw = spark.read.parquet(
+                *batch_month_paths(
+                    options.bronze_root,
+                    product,
+                    options.start_date,
+                    options.end_date,
+                )
+            )
             selected = raw.select(
                 F.to_date("date").alias("event_date"), F.col("lat").cast("double").alias("lat"),
                 F.col("lon").cast("double").alias("lon"), F.col(value_col).cast("double").alias("metric_value"),
@@ -212,6 +241,11 @@ def main():
                 F.col("SST").alias("sst"), F.col("NSST").alias("nsst"), F.col("SST4").alias("sst4"),
             )
         )
+        nasa = round_columns(
+            nasa,
+            6,
+            ["chlor_a", "poc", "nflh", "sst", "nsst", "sst4"],
+        )
         write_quality_report(
             nasa,
             "nasa_daily_grid",
@@ -222,7 +256,14 @@ def main():
         )
         write_partitioned(nasa, f"{options.silver_root.rstrip('/')}/{options.aoi_id}/nasa_daily_grid", options)
 
-        raw_gfw = spark.read.option("recursiveFileLookup", "true").parquet(f"{options.bronze_root.rstrip('/')}/GFW")
+        raw_gfw = spark.read.parquet(
+            *batch_month_paths(
+                options.bronze_root,
+                "GFW",
+                options.start_date,
+                options.end_date,
+            )
+        )
         effort = incremental(
             raw_gfw.select(
                 F.to_date("date").alias("event_date"), (F.col("cell_ll_lat") + .005).alias("lat"),
@@ -259,6 +300,7 @@ def main():
                 "vessel_presence_count",
             )
         )
+        effort = round_columns(effort, 6, ["presence_hours", "fishing_hours"])
         write_quality_report(
             effort,
             "gfw_daily_grid",

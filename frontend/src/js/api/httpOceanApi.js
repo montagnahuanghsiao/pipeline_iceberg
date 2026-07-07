@@ -12,6 +12,7 @@ async function request(path, params) {
   return response.json();
 }
 export const httpOceanApi = {
+  getAvailability: (filters) => request("/availability", filters),
   getDailyGrid: (filters) => request("/gold/daily-grid", filters),
   getSummary: (filters) => request("/gold/summary", filters),
   getTrend: ({ date: _date, ...filters }) => request("/gold/trend", filters),

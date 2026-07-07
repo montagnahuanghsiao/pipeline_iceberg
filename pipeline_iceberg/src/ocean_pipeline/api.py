@@ -118,6 +118,51 @@ def create_app() -> Flask:
             }
         )
 
+    @app.get("/api/v1/availability")
+    def availability():
+        aoi = request.args.get("aoi")
+        product = request.args.get("product")
+        metric = request.args.get("metric")
+        resolution = request.args.get("resolution")
+        if aoi and aoi not in load_aois():
+            raise ValueError(f"unsupported aoi: {aoi}")
+        if product and metric and (product, metric) not in _metric_pairs():
+            raise ValueError(f"unsupported product/metric pair: {product}/{metric}")
+        resolution_value = int(resolution) if resolution else None
+        if resolution_value is not None and resolution_value not in ALLOWED_RESOLUTIONS:
+            raise ValueError("resolution must be one of 4, 16, 32")
+
+        rows = _dict_rows(
+            """
+            SELECT
+                CAST(event_date AS VARCHAR) AS date,
+                aoi_id,
+                product_id,
+                metric_id,
+                CAST(resolution_km AS INTEGER) AS resolution_km,
+                CAST(cell_count AS BIGINT) AS cells
+            FROM read_parquet(?, hive_partitioning = true)
+            WHERE (? IS NULL OR aoi_id = ?)
+              AND (? IS NULL OR product_id = ?)
+              AND (? IS NULL OR metric_id = ?)
+              AND (? IS NULL OR resolution_km = ?)
+            ORDER BY event_date, aoi_id, product_id, metric_id, resolution_km
+            """,
+            [
+                _parquet_glob("gold_daily_metric_summary"),
+                aoi,
+                aoi,
+                product,
+                product,
+                metric,
+                metric,
+                resolution_value,
+                resolution_value,
+            ],
+        )
+        dates = sorted({row["date"] for row in rows})
+        return jsonify({"dates": dates, "partitions": rows})
+
     @app.get("/api/v1/gold/daily-grid")
     def daily_grid():
         filters = _filters()

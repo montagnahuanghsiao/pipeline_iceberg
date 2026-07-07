@@ -1,9 +1,9 @@
 import { AOIS, APP_CONFIG, METRICS, PRODUCTS } from "./config.js";
-import { createOceanApi } from "./api/client.js?v=0.4.5";
+import { createOceanApi } from "./api/client.js?v=0.4.6";
 import { state, setState, subscribe } from "./state.js";
 import { fillSelect, renderMetricTabs } from "./components/controls.js";
 import { renderPipelineKpis } from "./components/kpiCards.js";
-import { renderComponentBars } from "./components/bars.js?v=0.4.5";
+import { renderComponentBars } from "./components/bars.js?v=0.4.6";
 import { createOceanMap } from "./components/leafletMap.js";
 import { drawTrend } from "./components/trendCanvas.js";
 
@@ -32,6 +32,24 @@ const metricsFor = (product) => METRICS.filter((item) => item.productId === prod
 const selectedMetric = () => METRICS.find((item) => item.id === state.metric) ?? METRICS[0];
 const selectedAoi = () => AOIS.find((item) => item.id === state.aoi) ?? AOIS[0];
 
+function queryFilters(includeDate = true) {
+  const filters = {
+    aoi: state.aoi,
+    product: state.product,
+    metric: state.metric,
+    resolution: state.aoi === "northwest_pacific" ? 16 : 4,
+  };
+  if (includeDate) filters.date = state.date;
+  return filters;
+}
+
+function chooseAvailableDate(dates, preferred) {
+  if (!dates.length) return preferred;
+  if (dates.includes(preferred)) return preferred;
+  const earlier = dates.filter((date) => date <= preferred).at(-1);
+  return earlier ?? dates.at(-1);
+}
+
 const levelText = (score) => {
   if (score == null || Number.isNaN(Number(score))) return "無資料";
   if (score >= 80) return "非常多";
@@ -43,13 +61,7 @@ const levelText = (score) => {
 
 async function loadData() {
   setState({ loading: true, error: null });
-  const filters = {
-    date: state.date,
-    aoi: state.aoi,
-    product: state.product,
-    metric: state.metric,
-    resolution: state.aoi === "northwest_pacific" ? 16 : 4,
-  };
+  const filters = queryFilters(true);
   try {
     const [grid, summary, trend] = await Promise.all([
       api.getDailyGrid(filters),
@@ -59,6 +71,30 @@ async function loadData() {
     setState({ grid: grid.grid, summary, trend: trend.points, loading: false });
   } catch (error) {
     setState({
+      grid: [],
+      summary: null,
+      trend: [],
+      error,
+      loading: false,
+    });
+  }
+}
+
+async function syncAvailabilityAndLoad() {
+  setState({ loading: true, error: null });
+  try {
+    const availability = await api.getAvailability(queryFilters(false));
+    const dates = availability.dates ?? [];
+    if (!dates.length) throw new Error("目前選擇的 AOI / 產品 / 指標沒有可用日期");
+    const nextDate = chooseAvailableDate(dates, state.date);
+    els.date.min = dates[0];
+    els.date.max = dates.at(-1);
+    els.date.value = nextDate;
+    setState({ availableDates: dates, date: nextDate });
+    await loadData();
+  } catch (error) {
+    setState({
+      availableDates: [],
       grid: [],
       summary: null,
       trend: [],
@@ -133,22 +169,24 @@ function init() {
   refreshMetrics();
 
   els.date.onchange = (event) => {
-    setState({ date: event.target.value });
+    const nextDate = chooseAvailableDate(state.availableDates, event.target.value);
+    els.date.value = nextDate;
+    setState({ date: nextDate });
     loadData();
   };
   els.aoi.onchange = (event) => {
     setState({ aoi: event.target.value });
-    loadData();
+    syncAvailabilityAndLoad();
   };
   els.product.onchange = (event) => {
     setState({ product: event.target.value });
     refreshMetrics();
-    loadData();
+    syncAvailabilityAndLoad();
   };
   els.metric.onchange = (event) => {
     setState({ metric: event.target.value });
     refreshMetrics();
-    loadData();
+    syncAvailabilityAndLoad();
   };
   window.onresize = () => {
     oceanMap.invalidateSize();
@@ -157,7 +195,7 @@ function init() {
 
   renderPipelineKpis(els.kpis);
   subscribe(render);
-  loadData();
+  syncAvailabilityAndLoad();
 }
 
 init();
