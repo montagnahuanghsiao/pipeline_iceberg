@@ -1,3 +1,271 @@
+# Pipeline 部署與資源設定手冊
+
+> 規格：14G RAM / 8C CPU × 3 Worker
+> ConfigMap 位置：`pipeline_iceberg/deploy/kubernetes/00-configmap.yaml`
+
+---
+
+## 快速查閱：欄位分類總覽
+
+```
+00-configmap.yaml
+│
+├── 每次 batch 必改
+│   ├── BATCH_ID
+│   ├── START_DATE / END_DATE
+│   ├── AOI_IDS
+│   └── SERVING_RELEASE_ID
+│
+├── 換環境才改
+│   ├── HDFS_*_ROOT（4 個路徑）
+│   ├── ICEBERG_WAREHOUSE / CATALOG / NAMESPACE
+│   └── yarn-site.xml（NM 層 + Scheduler 層）
+│
+└── 效能調優才改
+    ├── SPARK_EXECUTOR_INSTANCES / CORES / MEMORY
+    ├── SPARK_EXECUTOR_MEMORY_OVERHEAD
+    ├── SPARK_DRIVER_MEMORY
+    ├── SPARK_SHUFFLE_PARTITIONS
+    ├── SILVER_WRITE_SHARDS
+    └── MAX_RECORDS_PER_FILE
+```
+
+---
+
+## 1. 每次 Batch 必改欄位
+
+```yaml
+BATCH_ID: "2024_01"
+START_DATE: "2024-01-01"
+END_DATE: "2024-01-31"
+AOI_IDS: taiwan,northwest_pacific
+SERVING_RELEASE_ID: "2024_01"
+```
+
+| 欄位                 | 說明                                 | 何時改             |
+| -------------------- | ------------------------------------ | ------------------ |
+| `BATCH_ID`           | 批次識別碼                           | 每次換月份、換批次 |
+| `START_DATE`         | 本次處理開始日期                     | 每次 batch         |
+| `END_DATE`           | 本次處理結束日期                     | 每次 batch         |
+| `AOI_IDS`            | 處理區域（台灣 / 西北太平洋 / 兩者） | 視需求調整         |
+| `SERVING_RELEASE_ID` | 通常與 `BATCH_ID` 相同，方便追蹤     | 每次 batch         |
+
+### 月批次範例（2024-02）
+
+```yaml
+BATCH_ID: "2024_02"
+START_DATE: "2024-02-01"
+END_DATE: "2024-02-29"
+AOI_IDS: taiwan,northwest_pacific
+SERVING_RELEASE_ID: "2024_02"
+```
+
+---
+
+## 2. HDFS / Iceberg 路徑設定
+
+> 換環境才動，月批次不改。
+
+```yaml
+HDFS_BRONZE_ROOT: hdfs:///raw/ocean/bronze
+HDFS_SILVER_ROOT: hdfs:///elt/ocean/silver
+HDFS_SERVING_ROOT: hdfs:///dataset/ocean/serving
+HDFS_METADATA_ROOT: hdfs:///metadata/ocean
+ICEBERG_WAREHOUSE: hdfs:///dataset/ocean/warehouse
+ICEBERG_CATALOG: lake
+ICEBERG_NAMESPACE: ocean
+```
+
+| 設定                 | 用途                                   |
+| -------------------- | -------------------------------------- |
+| `HDFS_BRONZE_ROOT`   | Bronze 原始 Parquet 上傳位置           |
+| `HDFS_SILVER_ROOT`   | Silver 清洗後 Parquet                  |
+| `HDFS_SERVING_ROOT`  | Serving batch Parquet                  |
+| `HDFS_METADATA_ROOT` | Pipeline manifest / quality report     |
+| `ICEBERG_WAREHOUSE`  | Iceberg Gold 表 warehouse 根目錄       |
+| `ICEBERG_CATALOG`    | Spark SQL catalog 名稱（目前：`lake`） |
+| `ICEBERG_NAMESPACE`  | Iceberg namespace（目前：`ocean`）     |
+
+---
+
+## 3. YARN 資源設定
+
+### 計算過程
+
+```
+實體記憶體  14G = 14336 MB
+  ├─ 保留 OS / DataNode / NM daemon  ~2048 MB
+  └─ 給 YARN                         12288 MB  ✅
+
+實體核心  8C
+  └─ CPU 可超賣，全部報給 YARN        8 vCore  ✅
+
+全叢集資源池（× 3 台 Worker）
+  記憶體池  12288 × 3 = 36864 MB
+  vCore 池      8 × 3 =    24 cores
+```
+
+### yarn-site.xml
+
+```xml
+<!-- ── NodeManager 層：每台撥多少給 YARN ── -->
+<property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>12288</value>
+</property>
+<property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>8</value>
+</property>
+
+<!-- ── Container 層：單一 Container 大小範圍 ── -->
+<property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>1024</value>
+</property>
+<property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>6144</value>
+</property>
+<property>
+    <name>yarn.scheduler.minimum-allocation-vcores</name>
+    <value>1</value>
+</property>
+<property>
+    <name>yarn.scheduler.maximum-allocation-vcores</name>
+    <value>3</value>
+</property>
+```
+
+### 套用流程
+
+```bash
+stopyarn
+nano ~/wulin/wk/dt/conf/hadoop-3.4.3/yarn-site.xml
+dtconf
+startyarn
+
+# 等 20-30 秒讓 NodeManager 重新註冊
+curl -s http://dtm-1:8088/ws/v1/cluster/metrics \
+  | grep -E "totalMB|totalVirtualCores|activeNodes"
+
+# 預期結果
+# "activeNodes": 3
+# "totalMB": 36864
+# "totalVirtualCores": 24
+```
+
+---
+
+## 4. Spark 資源設定（ConfigMap）
+
+### Executor 設計
+
+```
+每個 Executor：3 core + 5g memory + 1g overhead = 6g container
+
+驗算（每台）：
+  記憶體：12288 ÷ 6144 = 2 個  ✅
+  vCore：     8 ÷ 3    = 2 個（剩 2 core 給 OS / daemon）  ✅
+
+全叢集：2 × 3 = 6 個 Executor
+Task 槽：6 executor × 3 core = 18 個平行 Task
+Shuffle Partitions：18 × 4 = 72
+
+並行度驗算：
+  記憶體瓶頸：36864 ÷ 1024 = 36 個 container
+  vCore 瓶頸：   24 ÷    3 =  8 個 container
+  min(36, 8) = 8  → vCore 是瓶頸，記憶體仍有餘裕 ✅
+```
+
+### 00-configmap.yaml（Spark 資源區塊）
+
+```yaml
+SPARK_EXECUTOR_INSTANCES: "6" # 2 個/台 × 3 台
+SPARK_EXECUTOR_CORES: "3" # 每個 executor 拿 3 core
+SPARK_EXECUTOR_MEMORY: 5g # container = 5g + 1g overhead = 6g
+SPARK_EXECUTOR_MEMORY_OVERHEAD: 1g # 6g ≤ max-allocation 6144 MB ✅
+SPARK_DRIVER_MEMORY: 2g
+SPARK_SHUFFLE_PARTITIONS: "72" # 18 task 槽 × 4
+SPARK_ADVISORY_PARTITION_SIZE: "134217728" # 128 MB
+SILVER_WRITE_SHARDS: "16"
+MAX_RECORDS_PER_FILE: "2000000"
+```
+
+### 調整時機
+
+| 設定                             | 調整時機                                  |
+| -------------------------------- | ----------------------------------------- |
+| `SPARK_EXECUTOR_INSTANCES`       | 資料變多、叢集資源足夠時增加（上限 8）    |
+| `SPARK_EXECUTOR_CORES`           | 每個 executor 可用 CPU 增加時調           |
+| `SPARK_EXECUTOR_MEMORY`          | shuffle / join / groupBy OOM 時增加       |
+| `SPARK_EXECUTOR_MEMORY_OVERHEAD` | YARN container 被 kill 時增加             |
+| `SPARK_DRIVER_MEMORY`            | driver 收 metadata 或 planning OOM 時增加 |
+| `SPARK_SHUFFLE_PARTITIONS`       | 資料變多時增加，太小會單 partition 過重   |
+| `SILVER_WRITE_SHARDS`            | Silver 輸出太集中或小檔太多時調           |
+| `MAX_RECORDS_PER_FILE`           | 控制單一 Parquet 檔案大小                 |
+
+### OOM 速查
+
+| 症狀                      | 調整項目                         | 建議值              |
+| ------------------------- | -------------------------------- | ------------------- |
+| Executor OOM              | `SPARK_EXECUTOR_MEMORY`          | `6g`                |
+| YARN container killed     | `SPARK_EXECUTOR_MEMORY_OVERHEAD` | `1500m`             |
+| Driver OOM                | `SPARK_DRIVER_MEMORY`            | `3g`                |
+| Shuffle 單 partition 過重 | `SPARK_SHUFFLE_PARTITIONS`       | `120`               |
+| 西北太平洋跑太慢          | `SPARK_EXECUTOR_INSTANCES`       | `"8"`（vCore 上限） |
+
+---
+
+## 5. 換月份標準流程
+
+```bash
+# 1. 改 ConfigMap（batch 必改欄位）
+nano pipeline_iceberg/deploy/kubernetes/00-configmap.yaml
+
+# 2. 套用到 K8s
+kubectl apply -f pipeline_iceberg/deploy/kubernetes/00-configmap.yaml
+
+# 3. 確認套用成功
+kubectl get configmap -n <namespace>
+kubectl describe configmap <configmap-name> -n <namespace>
+
+# 4. 重新部署 Job（configmap 變更不會自動觸發 Job 重跑）
+kubectl delete -f pipeline_iceberg/deploy/kubernetes/
+kubectl apply -f pipeline_iceberg/deploy/kubernetes/
+```
+
+---
+
+## 6. 設定總覽
+
+```
+規格：14G 8C × 3 Worker
+│
+├── YARN 層（yarn-site.xml）
+│   ├── NM memory-mb          12288   （14G - 2G OS）
+│   ├── NM cpu-vcores             8   （全部，CPU 可超賣）
+│   ├── scheduler min-mb       1024
+│   ├── scheduler max-mb       6144
+│   └── scheduler max-vcores      3
+│
+├── Spark 層（00-configmap.yaml）
+│   ├── executor instances        6   （2/台 × 3 台，上限可到 8）
+│   ├── executor cores            3
+│   ├── executor memory          5g
+│   ├── executor overhead        1g   → container = 6g
+│   ├── driver memory            2g
+│   └── shuffle partitions       72   （18 task × 4）
+│
+├── 資料湖路徑（00-configmap.yaml）
+│   ├── HDFS Bronze / Silver / Serving / Metadata
+│   └── Iceberg Warehouse / Catalog / Namespace
+│
+└── 瓶頸分析
+    └── vCore（24 ÷ 3 = 8），記憶體還有餘裕
+        未來可加 SPARK_EXECUTOR_INSTANCES 至 "8"
+```
+
 # OceanGrid pipeline_iceberg Kubernetes 部署 SOP
 
 本文件記錄目前在 tkdt / Kubernetes 環境部署 `pipeline_iceberg` 的實際流程。
@@ -297,7 +565,7 @@ kubectl run ocean-api-curl -n dt --rm -it --restart=Never \
 應回傳：
 
 ```json
-{"status":"ok"}
+{ "status": "ok" }
 ```
 
 也可在 `dtadm` 直接測：
@@ -424,7 +692,7 @@ Failed to construct 'URL': Invalid URL
 代表前端 JavaScript 組 URL 失敗，API request 還沒送到 Flask。新版前端應使用：
 
 ```js
-new URL(`${APP_CONFIG.apiBaseUrl}${path}`, window.location.origin)
+new URL(`${APP_CONFIG.apiBaseUrl}${path}`, window.location.origin);
 ```
 
 部署後驗證：
