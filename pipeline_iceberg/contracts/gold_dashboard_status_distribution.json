@@ -1,0 +1,28 @@
+{
+  "dataset": "gold_dashboard_status_distribution",
+  "purpose": "Pie/stacked-bar distribution of fishing-ground status classes derived from productivity and fishing activity.",
+  "grain": "one row per event_date, aoi_id, resolution_km and status_class",
+  "source_tables": ["gold_map_metric"],
+  "date_scope": "2024-01-01 to pipeline end date by default",
+  "unique_key": ["event_date", "aoi_id", "resolution_km", "status_class"],
+  "allowed_status_class": [
+    "high_productivity_low_fishing",
+    "high_productivity_high_fishing",
+    "low_productivity_high_fishing",
+    "low_productivity_low_fishing"
+  ],
+  "fields": {
+    "event_date": "date",
+    "aoi_id": "string",
+    "resolution_km": "integer",
+    "status_class": "string",
+    "cell_count": "long",
+    "cell_ratio": "double",
+    "fishing_hours_total": "double",
+    "productivity_score_avg": "double",
+    "fishing_score_avg": "double",
+    "updated_at_utc": "timestamp",
+    "pipeline_version": "string"
+  },
+  "partition_by": ["event_date", "aoi_id", "resolution_km"]
+}

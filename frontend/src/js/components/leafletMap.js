@@ -89,7 +89,7 @@ function createGridCanvasLayer(L) {
         const height = Math.max(1, southeast.y - northwest.y);
         const coverage = Math.max(0, Math.min(1, Number(cell.data_coverage ?? 1)));
 
-        ctx.globalAlpha = 0.42 + coverage * 0.58;
+        ctx.globalAlpha = 0.34 + coverage * 0.52;
         ctx.fillStyle = heatColor(
           Number(cell.value),
           this._metricMeta.domain,

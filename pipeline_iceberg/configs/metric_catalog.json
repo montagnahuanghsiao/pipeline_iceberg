@@ -14,15 +14,15 @@
     "metric_id": "sea_temperature",
     "label": "海溫相對高低",
     "unit": "",
-    "higher_is_better": null,
-    "interpretation": "neutral_temperature_band",
+    "higher_is_better": true,
+    "interpretation": "relative_temperature_intensity",
     "min": 0,
     "max": 100
   },
   {
     "product_id": "PRODUCTIVITY",
     "metric_id": "ocean_productivity_score",
-    "label": "海洋生產力相對高低",
+    "label": "海洋生產力分數相對高低",
     "unit": "",
     "higher_is_better": true,
     "interpretation": "higher_proxy_score",
@@ -34,7 +34,7 @@
     "metric_id": "sustainability_pressure",
     "label": "永續壓力相對高低",
     "unit": "",
-    "higher_is_better": false,
+    "higher_is_better": true,
     "interpretation": "higher_pressure_is_worse",
     "min": 0,
     "max": 100
@@ -44,7 +44,7 @@
     "metric_id": "fishing_hours",
     "label": "捕魚時數相對高低",
     "unit": "",
-    "higher_is_better": null,
+    "higher_is_better": true,
     "interpretation": "activity_intensity_only",
     "min": 0,
     "max": 100

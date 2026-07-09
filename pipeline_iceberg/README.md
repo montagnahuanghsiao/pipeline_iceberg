@@ -68,11 +68,12 @@ snapshots and never starts Spark inside an HTTP request. Trino is not used.
 
 Gold produces:
 
-- `ocean.gold_daily_grid_features`: daily 4 km wide table over grids observed
-  by NASA in the processing window. Unfillable NASA values remain null with
-  `source=no_data`; zero is not used as a substitute for missing observations.
+- `ocean.gold_daily_grid_features`: daily 4 km complete AOI grid. Missing NASA
+  display values are filled with same-grid, neighbor-grid, then AOI-window
+  means; GFW missing activity rows are zero-filled.
 - `ocean.gold_map_metric`: long frontend-serving table.
-- `ocean.gold_daily_metric_summary`: daily relative-score summary table.
+- `ocean.gold_dashboard_daily_metrics`: dashboard daily indicators for line/bar/KPI cards.
+- `ocean.gold_dashboard_status_distribution`: dashboard status distribution for pie/stacked-bar charts.
 
 Design and deployment:
 
@@ -85,11 +86,12 @@ The serving grain is:
 event_date + aoi_id + product_id + metric_id + resolution_km + grid_id
 ```
 
-Missing NASA display cells use the same-grid trailing mean and eight-neighbor
-mean for the configured window (three days in the MVP). Values that still
-cannot be filled remain `null` with `source=no_data`; AOI-wide forced filling is
-not used. GFW cells without activity rows are zero-filled only after the Silver
-input for the requested dates has passed its quality checks.
+Missing NASA display cells use the same-grid trailing mean, eight-neighbor
+mean, and AOI-wide trailing mean for the configured window (5 days by
+default). If a final display value still cannot be filled, the Gold job fails
+instead of writing a partial frontend partition. GFW cells without activity rows
+are zero-filled only after the Silver input for the requested dates has passed
+its quality checks.
 
 Silver writes one machine-readable quality report per AOI and dataset under:
 

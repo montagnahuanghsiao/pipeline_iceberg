@@ -18,7 +18,7 @@ data:
   AOI_IDS: taiwan
   START_DATE: "2024-12-01"
   END_DATE: "2024-12-07"
-  FILL_WINDOW_DAYS: "3"
+  FILL_WINDOW_DAYS: "5"
   SERVING_RELEASE_ID: "2024_12_01_07"
   SPARK_HOME: /opt/zfs/sys/spark-3.5.8-bin-hadoop3
   HADOOP_HOME: /opt/zfs/sys/hadoop-3.5.0

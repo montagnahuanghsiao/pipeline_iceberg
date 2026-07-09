@@ -43,6 +43,7 @@ API contract:
 GET /api/v1/gold/daily-grid?date=2024-12-12&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4
 GET /api/v1/gold/summary?date=2024-12-12&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4
 GET /api/v1/gold/trend?aoi=taiwan&product=CHL&metric=chlor_a&resolution=4
+GET /api/v1/gold/status-distribution?date=2024-12-12&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4
 ```
 
 Map cells require `grid_id`, `grid_row`, `grid_col`, `relative_score`,

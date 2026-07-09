@@ -1,6 +1,6 @@
 {
   "dataset": "gold_map_metric",
-  "purpose": "Frontend heatmap over NASA-observed ocean grids, selectable by date, AOI, product, metric and resolution.",
+  "purpose": "Frontend heatmap over complete AOI grids, selectable by date, AOI, product, metric and resolution.",
   "grain": "event_date + aoi_id + product_id + metric_id + resolution_km + grid_id",
   "unique_key": [
     "event_date",
@@ -28,7 +28,7 @@
     "updated_at_utc": "timestamp",
     "pipeline_version": "string"
   },
-  "nullable_columns": ["metric_value", "relative_score"],
+  "nullable_columns": [],
   "products": [
     ["CHL", "chlor_a"],
     ["SST", "sea_temperature"],
@@ -51,14 +51,14 @@
       "observed",
       "grid_<window>d_mean",
       "neighbor_<window>d_mean",
-      "no_data"
+      "aoi_<window>d_mean"
     ],
     "gfw_missing_policy": "zero_filled",
-    "note": "metric_value and relative_score are null when value_source=no_data; API and frontend must render no_data separately from zero"
+    "note": "Final map outputs must not contain null metric_value or relative_score. If AOI-wide fill cannot produce a value, the Gold job fails instead of writing an incomplete serving partition."
   },
   "limitations": [
     "All scores are within-day AOI percentiles and do not compare absolute values across dates.",
-    "Filled NASA values are display estimates rather than direct observations; values that cannot be filled remain no_data.",
+    "Filled NASA values are display estimates rather than direct observations.",
     "Fishing hours represent apparent fishing effort, not catch."
   ]
 }

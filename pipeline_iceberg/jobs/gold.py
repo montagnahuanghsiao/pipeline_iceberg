@@ -1,23 +1,25 @@
-"""Build observed-ocean-grid Gold features and percentile heatmaps.
+"""Build complete-AOI Gold features and percentile heatmaps.
 
 Bronze and Silver keep observed values. This job uses grid cells that occur in
-NASA Silver during the processing window and fills missing observations in this
-order:
+the configured AOI rectangle and fills missing observations in this order:
 
 1. observed value for the requested date;
 2. trailing mean for the same grid cell;
 3. trailing mean of the eight surrounding grid cells;
-4. null with an explicit ``no_data`` source.
+4. trailing mean over the whole AOI.
 
 GFW cells without an activity row are zero-filled.  All five frontend metrics
 with values are converted to 0-100 percentile scores within
-date/AOI/metric/resolution. Missing NASA-derived metrics remain unscored.
+date/AOI/metric/resolution. Final display products must be complete; the job
+fails rather than writing no-data grid cells.
 """
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import date, timedelta
 from functools import reduce
+from pathlib import Path
 
 from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession, Window, functions as F
@@ -85,21 +87,49 @@ def write_iceberg(df: DataFrame, table: str, partitions: list[str]) -> None:
         )
 
 
-def observed_grid_backbone(
+def load_aoi_config(path: str, aoi_id: str) -> dict[str, float]:
+    config = json.loads(Path(path).read_text(encoding="utf-8"))
+    if aoi_id not in config:
+        raise ValueError(f"AOI {aoi_id!r} not found in {path}")
+    return config[aoi_id]
+
+
+def complete_grid_backbone(
     spark: SparkSession,
     aoi_id: str,
-    observations: DataFrame,
+    aoi: dict[str, float],
     start_date: date,
     end_date: date,
 ) -> DataFrame:
-    """Return every date x NASA grid cell observed in the processing window."""
+    """Return every date x 4 km grid cell inside the configured AOI rectangle."""
     day_count = (end_date - start_date).days + 1
     dates = spark.range(day_count).select(
         F.date_add(F.lit(start_date), F.col("id").cast("int")).alias("event_date")
     )
-    valid_grids = observations.select("grid_id", "grid_row", "grid_col").distinct()
+    row_min = int((90.0 - float(aoi["max_lat"])) * 24)
+    row_max = int((90.0 - float(aoi["min_lat"])) * 24) - 1
+    col_min = int((float(aoi["min_lon"]) + 180.0) * 24)
+    col_max = int((float(aoi["max_lon"]) + 180.0) * 24) - 1
+    rows = spark.range(row_min, row_max + 1).select(
+        F.col("id").cast("short").alias("grid_row")
+    )
+    cols = spark.range(col_min, col_max + 1).select(
+        F.col("id").cast("short").alias("grid_col")
+    )
+    grids = (
+        rows.crossJoin(cols)
+        .withColumn(
+            "grid_id",
+            F.format_string(
+                "nasa4km_r%04d_c%04d",
+                F.col("grid_row"),
+                F.col("grid_col"),
+            ),
+        )
+        .select("grid_id", "grid_row", "grid_col")
+    )
     return (
-        dates.crossJoin(valid_grids)
+        dates.crossJoin(grids)
         .withColumn("aoi_id", F.lit(aoi_id))
         .select(*KEYS)
     )
@@ -180,15 +210,23 @@ def fill_environment_metric(
         .orderBy(day_number)
         .rangeBetween(-(fill_window_days - 1), 0)
     )
+    aoi_window = (
+        Window.partitionBy("aoi_id")
+        .orderBy(day_number)
+        .rangeBetween(-(fill_window_days - 1), 0)
+    )
     enriched = joined.withColumn(
         "_grid_window_mean", F.avg(raw_column).over(cell_window)
     ).withColumn(
         "_grid_window_count", F.count(raw_column).over(cell_window)
+    ).withColumn(
+        "_aoi_window_mean", F.avg(raw_column).over(aoi_window)
     )
 
     neighbors = _neighbor_candidates(enriched, "_grid_window_mean")
     grid_source = f"grid_{fill_window_days}d_mean"
     neighbor_source = f"neighbor_{fill_window_days}d_mean"
+    aoi_source = f"aoi_{fill_window_days}d_mean"
     result = (
         enriched.join(
             neighbors,
@@ -201,6 +239,7 @@ def fill_environment_metric(
                 F.col(raw_column),
                 F.col("_grid_window_mean"),
                 F.col("_neighbor_window_mean"),
+                F.col("_aoi_window_mean"),
             ),
         )
         .withColumn(
@@ -211,6 +250,7 @@ def fill_environment_metric(
                 F.col("_neighbor_window_mean").isNotNull(),
                 F.lit(neighbor_source),
             )
+            .when(F.col("_aoi_window_mean").isNotNull(), F.lit(aoi_source))
             .otherwise(F.lit("no_data")),
         )
         .withColumn(
@@ -528,6 +568,16 @@ def assert_missing_values_explained(
         raise RuntimeError(f"{label} contains unexplained or invalid metric values")
 
 
+def assert_no_missing_values(frame: DataFrame, columns: list[str], label: str) -> None:
+    invalid_condition = reduce(
+        lambda left, right: left | right,
+        [F.col(column).isNull() | F.isnan(F.col(column)) for column in columns],
+    )
+    invalid = frame.where(invalid_condition).limit(1).count()
+    if invalid:
+        raise RuntimeError(f"{label} contains null/NaN display values after fill")
+
+
 def main():
     options = parse_args()
     if options.end_date < options.start_date:
@@ -539,6 +589,7 @@ def main():
     namespace = f"{options.catalog}.{options.namespace}"
     spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {namespace}")
     root = f"{options.silver_root.rstrip('/')}/{options.aoi_id}"
+    aoi = load_aoi_config(options.aoi_config, options.aoi_id)
     history_start = options.start_date - timedelta(days=options.fill_window_days - 1)
     history_filter = F.col("event_date").between(
         F.lit(history_start), F.lit(options.end_date)
@@ -550,17 +601,17 @@ def main():
     try:
         nasa = spark.read.parquet(f"{root}/nasa_daily_grid").where(history_filter)
         gfw = spark.read.parquet(f"{root}/gfw_daily_grid").where(history_filter)
-        backbone = observed_grid_backbone(
+        backbone = complete_grid_backbone(
             spark,
             options.aoi_id,
-            nasa,
+            aoi,
             history_start,
             options.end_date,
         ).persist(StorageLevel.MEMORY_AND_DISK)
         backbone_rows = backbone.count()
         if backbone_rows == 0:
             raise RuntimeError(
-                f"No NASA-observed grids found for {options.aoi_id} "
+                f"No AOI grid cells found for {options.aoi_id} "
                 f"between {history_start} and {options.end_date}"
             )
         print(
@@ -603,6 +654,17 @@ def main():
             ],
             "gold_daily_grid_features",
         )
+        assert_no_missing_values(
+            wide,
+            [
+                "chlor_a",
+                "sea_temperature_celsius",
+                "ocean_productivity_score",
+                "sustainability_pressure",
+                "fishing_hours",
+            ],
+            "gold_daily_grid_features",
+        )
         write_iceberg(
             wide,
             f"{namespace}.gold_daily_grid_features",
@@ -621,22 +683,14 @@ def main():
             [("metric_value", "value_source")],
             "gold_map_metric",
         )
+        assert_no_missing_values(
+            serving,
+            ["metric_value", "relative_score"],
+            "gold_map_metric",
+        )
         write_iceberg(
             serving,
             f"{namespace}.gold_map_metric",
-            ["event_date", "aoi_id", "resolution_km"],
-        )
-        summary = serving.groupBy(
-            "event_date", "aoi_id", "product_id", "metric_id", "resolution_km"
-        ).agg(
-            F.avg("relative_score").alias("average_score"),
-            F.max("relative_score").alias("maximum_score"),
-            F.count("*").alias("cell_count"),
-            F.avg("data_coverage").alias("data_coverage"),
-        )
-        write_iceberg(
-            summary,
-            f"{namespace}.gold_daily_metric_summary",
             ["event_date", "aoi_id", "resolution_km"],
         )
         serving.unpersist()

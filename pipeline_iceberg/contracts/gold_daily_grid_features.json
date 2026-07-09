@@ -1,6 +1,6 @@
 {
   "dataset": "gold_daily_grid_features",
-  "purpose": "Daily 4 km grid over cells observed by NASA in the processing window, with five final display products.",
+  "purpose": "Daily complete AOI 4 km grid with five final display products.",
   "grain": "event_date + aoi_id + grid_id",
   "unique_key": ["event_date", "aoi_id", "grid_id"],
   "partition_spec": ["event_date", "aoi_id"],
@@ -23,22 +23,17 @@
     "updated_at_utc": "timestamp",
     "pipeline_version": "string"
   },
-  "nullable_product_columns": [
-    "chlor_a",
-    "sea_temperature_celsius",
-    "ocean_productivity_score",
-    "sustainability_pressure"
-  ],
+  "nullable_product_columns": [],
   "fill_policy": {
-    "window_days": "configured by --fill-window-days; MVP default deployment is 3",
+    "window_days": "configured by --fill-window-days; MVP default deployment is 5",
     "nasa_order": [
       "observed",
       "same-grid trailing mean",
       "eight-neighbor trailing mean",
-      "no_data"
+      "AOI trailing mean"
     ],
     "gfw_missing": 0,
-    "failure_policy": "NaN or a null without source=no_data fails the job; an explained no_data null is retained"
+    "failure_policy": "Any final product null or NaN fails the job; Gold display outputs are complete."
   },
   "formulas": {
     "sea_temperature_celsius": "coalesce(sst4, nsst, sst), then apply the fill policy",

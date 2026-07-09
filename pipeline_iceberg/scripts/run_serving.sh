@@ -42,10 +42,13 @@ fi
 "${HADOOP_HOME}/bin/hdfs" dfs -get \
   "${batch_hdfs_root}/gold_map_metric" "${batch_dir}/"
 "${HADOOP_HOME}/bin/hdfs" dfs -get \
-  "${batch_hdfs_root}/gold_daily_metric_summary" "${batch_dir}/"
+  "${batch_hdfs_root}/gold_dashboard_daily_metrics" "${batch_dir}/"
+"${HADOOP_HOME}/bin/hdfs" dfs -get \
+  "${batch_hdfs_root}/gold_dashboard_status_distribution" "${batch_dir}/"
 
 test -n "$(find "${batch_dir}/gold_map_metric" -type f -name '*.parquet' -print -quit)"
-test -n "$(find "${batch_dir}/gold_daily_metric_summary" -type f -name '*.parquet' -print -quit)"
+test -n "$(find "${batch_dir}/gold_dashboard_daily_metrics" -type f -name '*.parquet' -print -quit)"
+test -n "$(find "${batch_dir}/gold_dashboard_status_distribution" -type f -name '*.parquet' -print -quit)"
 
 merge_dataset() {
   local dataset="$1"
@@ -63,10 +66,12 @@ merge_dataset() {
 }
 
 merge_dataset "gold_map_metric"
-merge_dataset "gold_daily_metric_summary"
+merge_dataset "gold_dashboard_daily_metrics"
+merge_dataset "gold_dashboard_status_distribution"
 
 test -n "$(find "${staging_dir}/gold_map_metric" -type f -name '*.parquet' -print -quit)"
-test -n "$(find "${staging_dir}/gold_daily_metric_summary" -type f -name '*.parquet' -print -quit)"
+test -n "$(find "${staging_dir}/gold_dashboard_daily_metrics" -type f -name '*.parquet' -print -quit)"
+test -n "$(find "${staging_dir}/gold_dashboard_status_distribution" -type f -name '*.parquet' -print -quit)"
 
 rm -rf "${release_dir}"
 mv "${staging_dir}" "${release_dir}"

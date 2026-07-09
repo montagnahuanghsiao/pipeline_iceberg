@@ -1,10 +1,11 @@
 import { AOIS, APP_CONFIG, METRICS, PRODUCTS } from "./config.js";
-import { createOceanApi } from "./api/client.js?v=0.4.6";
+import { createOceanApi } from "./api/client.js?v=0.5.0";
 import { state, setState, subscribe } from "./state.js";
 import { fillSelect, renderMetricTabs } from "./components/controls.js";
 import { renderPipelineKpis } from "./components/kpiCards.js";
-import { renderComponentBars } from "./components/bars.js?v=0.4.6";
+import { renderComponentBars } from "./components/bars.js?v=0.5.0";
 import { createOceanMap } from "./components/leafletMap.js";
+import { drawStatusPie } from "./components/pieCanvas.js";
 import { drawTrend } from "./components/trendCanvas.js";
 
 const api = createOceanApi();
@@ -25,6 +26,7 @@ const els = {
   source: byId("sourceMode"),
   bars: byId("componentBars"),
   trend: byId("trendCanvas"),
+  statusPie: byId("statusPieCanvas"),
   kpis: byId("pipelineKpis"),
 };
 
@@ -63,17 +65,25 @@ async function loadData() {
   setState({ loading: true, error: null });
   const filters = queryFilters(true);
   try {
-    const [grid, summary, trend] = await Promise.all([
+    const [grid, summary, trend, status] = await Promise.all([
       api.getDailyGrid(filters),
       api.getSummary(filters),
       api.getTrend(filters),
+      api.getStatusDistribution(filters),
     ]);
-    setState({ grid: grid.grid, summary, trend: trend.points, loading: false });
+    setState({
+      grid: grid.grid,
+      summary,
+      trend: trend.points,
+      statusDistribution: status.classes,
+      loading: false,
+    });
   } catch (error) {
     setState({
       grid: [],
       summary: null,
       trend: [],
+      statusDistribution: [],
       error,
       loading: false,
     });
@@ -98,6 +108,7 @@ async function syncAvailabilityAndLoad() {
       grid: [],
       summary: null,
       trend: [],
+      statusDistribution: [],
       error,
       loading: false,
     });
@@ -140,14 +151,10 @@ function render(current) {
   } else if (current.summary) {
     els.statusTitle.textContent = "相對分布已載入";
     els.statusText.textContent = "色彩僅表示同日、同海域內的相對多寡。";
-    renderComponentBars(els.bars, [
-      { label: "整體分布", value: current.summary.average, text: levelText(current.summary.average) },
-      { label: "最高區域", value: current.summary.maximum, text: levelText(current.summary.maximum) },
-      {
-        label: "資料覆蓋",
-        value: current.summary.nasa_coverage * 100,
-        text: levelText(current.summary.nasa_coverage * 100),
-      },
+    renderComponentBars(els.bars, current.summary.components ?? [
+      { label: "高生產力格", value: current.summary.high_productivity_cell_ratio * 100, text: `${(current.summary.high_productivity_cell_ratio * 100).toFixed(1)}%` },
+      { label: "高捕魚活動", value: current.summary.high_activity_cell_ratio * 100, text: `${(current.summary.high_activity_cell_ratio * 100).toFixed(1)}%` },
+      { label: "高永續壓力", value: current.summary.high_pressure_cell_ratio * 100, text: `${(current.summary.high_pressure_cell_ratio * 100).toFixed(1)}%` },
     ]);
   }
 
@@ -157,6 +164,7 @@ function render(current) {
     mapConfig: aoi,
   });
   drawTrend(els.trend, current.trend, current.date);
+  drawStatusPie(els.statusPie, current.statusDistribution);
 }
 
 function init() {

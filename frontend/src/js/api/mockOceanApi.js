@@ -77,7 +77,45 @@ export const mockOceanApi = {
   async getDailyGrid(filters) { return { ...filters, source: "mock", grid: buildGrid(filters) }; },
   async getSummary(filters) {
     const grid = buildGrid(filters); const values = grid.map((cell) => cell.value);
-    return { ...filters, partition: `event_date=${filters.date}/aoi_id=${filters.aoi}`, nasa_coverage: grid.reduce((sum, cell) => sum + cell.data_coverage, 0) / grid.length, cells: grid.length, average: values.reduce((a, b) => a + b, 0) / values.length, maximum: Math.max(...values), components: [] };
+    const high = (threshold) => grid.filter((cell) => cell.value >= threshold).length / grid.length;
+    const fishingHours = grid.reduce((sum, cell) => sum + (filters.metric === "fishing_hours" ? cell.value : makeRawValue("fishing_hours", 0.5, 0.5, cell.grid_row, cell.grid_col, Number(filters.date.slice(-2)))), 0);
+    return {
+      ...filters,
+      partition: `event_date=${filters.date}/aoi_id=${filters.aoi}`,
+      data_coverage: grid.reduce((sum, cell) => sum + cell.data_coverage, 0) / grid.length,
+      nasa_coverage: grid.reduce((sum, cell) => sum + cell.data_coverage, 0) / grid.length,
+      cells: grid.length,
+      average: values.reduce((a, b) => a + b, 0) / values.length,
+      chlor_a_avg: 1.7 + noise(1, 2, Number(filters.date.slice(-2))) * 2.2,
+      sea_temperature_avg: 23 + noise(2, 3, Number(filters.date.slice(-2))) * 5,
+      ocean_productivity_avg: 2.6 + noise(3, 4, Number(filters.date.slice(-2))) * 1.1,
+      sustainability_pressure_avg: 8 + noise(4, 5, Number(filters.date.slice(-2))) * 9,
+      sustainability_pressure_p90: 20 + noise(5, 6, Number(filters.date.slice(-2))) * 22,
+      fishing_hours_total: fishingHours,
+      active_cell_ratio: 0.34,
+      high_activity_cell_ratio: high(80),
+      high_productivity_cell_ratio: 0.2 + noise(6, 7, Number(filters.date.slice(-2))) * 0.18,
+      high_pressure_cell_ratio: 0.12 + noise(7, 8, Number(filters.date.slice(-2))) * 0.16,
+      share_of_all_fishing_hours: filters.aoi === "taiwan" ? 0.64 : 0.36,
+      fishing_hours_7d_avg: fishingHours * 0.92,
+      sustainability_pressure_7d_avg: 11.5,
+      components: [
+        { label: "高生產力格", value: 28, text: "28%" },
+        { label: "高捕魚活動", value: 18, text: "18%" },
+        { label: "高永續壓力", value: 14, text: "14%" },
+      ],
+    };
+  },
+  async getStatusDistribution(filters) {
+    return {
+      ...filters,
+      classes: [
+        { status_class: "high_productivity_low_fishing", cell_ratio: 0.26, cell_count: 260, fishing_hours_total: 180 },
+        { status_class: "high_productivity_high_fishing", cell_ratio: 0.14, cell_count: 140, fishing_hours_total: 620 },
+        { status_class: "low_productivity_high_fishing", cell_ratio: 0.09, cell_count: 90, fishing_hours_total: 410 },
+        { status_class: "low_productivity_low_fishing", cell_ratio: 0.51, cell_count: 510, fishing_hours_total: 90 },
+      ],
+    };
   },
   async getTrend(filters) {
     return { ...filters, points: Array.from({ length: 31 }, (_, index) => ({ date: `2024-12-${String(index + 1).padStart(2, "0")}`, value: 48 + Math.sin(index / 3) * 17 + noise(index, 1, 4) * 12 })) };

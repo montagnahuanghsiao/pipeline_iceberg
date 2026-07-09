@@ -13,6 +13,13 @@ from flask_cors import CORS
 from ocean_pipeline.catalog import load_aois, load_metrics
 
 ALLOWED_RESOLUTIONS = {4, 16, 32}
+TREND_COLUMNS = {
+    "chlor_a": "chlor_a_score_avg",
+    "sea_temperature": "sea_temperature_score_avg",
+    "ocean_productivity_score": "ocean_productivity_score_avg",
+    "sustainability_pressure": "sustainability_pressure_score_avg",
+    "fishing_hours": "fishing_hours_score_avg",
+}
 
 
 def _snapshot_root() -> Path:
@@ -94,7 +101,11 @@ def create_app() -> Flask:
         root = _snapshot_root()
         ready = all(
             (root / name).is_dir()
-            for name in ("gold_map_metric", "gold_daily_metric_summary")
+            for name in (
+                "gold_map_metric",
+                "gold_dashboard_daily_metrics",
+                "gold_dashboard_status_distribution",
+            )
         )
         return jsonify({"status": "ok" if ready else "not_ready"}), 200 if ready else 503
 
@@ -140,16 +151,17 @@ def create_app() -> Flask:
                 product_id,
                 metric_id,
                 CAST(resolution_km AS INTEGER) AS resolution_km,
-                CAST(cell_count AS BIGINT) AS cells
+                CAST(COUNT(*) AS BIGINT) AS cells
             FROM read_parquet(?, hive_partitioning = true)
             WHERE (? IS NULL OR aoi_id = ?)
               AND (? IS NULL OR product_id = ?)
               AND (? IS NULL OR metric_id = ?)
               AND (? IS NULL OR resolution_km = ?)
+            GROUP BY event_date, aoi_id, product_id, metric_id, resolution_km
             ORDER BY event_date, aoi_id, product_id, metric_id, resolution_km
             """,
             [
-                _parquet_glob("gold_daily_metric_summary"),
+                _parquet_glob("gold_map_metric"),
                 aoi,
                 aoi,
                 product,
@@ -210,58 +222,111 @@ def create_app() -> Flask:
     @app.get("/api/v1/gold/summary")
     def summary():
         filters = _filters()
+        score_column = TREND_COLUMNS[filters["metric"]]
         rows = _dict_rows(
-            """
+            f"""
             SELECT
-                CAST(average_score AS DOUBLE) AS average,
-                CAST(maximum_score AS DOUBLE) AS maximum,
-                CAST(data_coverage AS DOUBLE) AS nasa_coverage,
-                CAST(cell_count AS BIGINT) AS cells
+                CAST({score_column} AS DOUBLE) AS average,
+                CAST(data_coverage AS DOUBLE) AS data_coverage,
+                CAST(cell_count AS BIGINT) AS cells,
+                CAST(chlor_a_avg AS DOUBLE) AS chlor_a_avg,
+                CAST(sea_temperature_avg AS DOUBLE) AS sea_temperature_avg,
+                CAST(ocean_productivity_avg AS DOUBLE) AS ocean_productivity_avg,
+                CAST(sustainability_pressure_avg AS DOUBLE) AS sustainability_pressure_avg,
+                CAST(sustainability_pressure_p90 AS DOUBLE) AS sustainability_pressure_p90,
+                CAST(fishing_hours_total AS DOUBLE) AS fishing_hours_total,
+                CAST(active_cell_ratio AS DOUBLE) AS active_cell_ratio,
+                CAST(high_activity_cell_ratio AS DOUBLE) AS high_activity_cell_ratio,
+                CAST(high_productivity_cell_ratio AS DOUBLE) AS high_productivity_cell_ratio,
+                CAST(high_pressure_cell_ratio AS DOUBLE) AS high_pressure_cell_ratio,
+                CAST(share_of_all_fishing_hours AS DOUBLE) AS share_of_all_fishing_hours,
+                CAST(fishing_hours_7d_avg AS DOUBLE) AS fishing_hours_7d_avg,
+                CAST(sustainability_pressure_7d_avg AS DOUBLE) AS sustainability_pressure_7d_avg
             FROM read_parquet(?, hive_partitioning = true)
             WHERE event_date = CAST(? AS DATE)
               AND aoi_id = ?
-              AND product_id = ?
-              AND metric_id = ?
               AND resolution_km = ?
             LIMIT 1
             """,
             [
-                _parquet_glob("gold_daily_metric_summary"),
+                _parquet_glob("gold_dashboard_daily_metrics"),
                 filters["date"],
                 filters["aoi"],
-                filters["product"],
-                filters["metric"],
                 filters["resolution"],
             ],
         )
         if not rows:
-            return jsonify({"error": "no matching summary partition"}), 404
-        return jsonify({**filters, **rows[0], "components": []})
+            return jsonify({"error": "no matching dashboard partition"}), 404
+        row = rows[0]
+        components = [
+            {
+                "label": "高生產力格",
+                "value": (row["high_productivity_cell_ratio"] or 0) * 100,
+                "text": f"{((row['high_productivity_cell_ratio'] or 0) * 100):.1f}%",
+            },
+            {
+                "label": "高捕魚活動",
+                "value": (row["high_activity_cell_ratio"] or 0) * 100,
+                "text": f"{((row['high_activity_cell_ratio'] or 0) * 100):.1f}%",
+            },
+            {
+                "label": "高永續壓力",
+                "value": (row["high_pressure_cell_ratio"] or 0) * 100,
+                "text": f"{((row['high_pressure_cell_ratio'] or 0) * 100):.1f}%",
+            },
+        ]
+        return jsonify({**filters, **row, "nasa_coverage": row["data_coverage"], "components": components})
 
     @app.get("/api/v1/gold/trend")
     def trend():
         filters = _filters(require_date=False)
+        score_column = TREND_COLUMNS[filters["metric"]]
         rows = _dict_rows(
-            """
+            f"""
             SELECT
                 CAST(event_date AS VARCHAR) AS date,
-                CAST(average_score AS DOUBLE) AS value
+                CAST({score_column} AS DOUBLE) AS value
             FROM read_parquet(?, hive_partitioning = true)
             WHERE aoi_id = ?
-              AND product_id = ?
-              AND metric_id = ?
               AND resolution_km = ?
             ORDER BY event_date
             """,
             [
-                _parquet_glob("gold_daily_metric_summary"),
+                _parquet_glob("gold_dashboard_daily_metrics"),
                 filters["aoi"],
-                filters["product"],
-                filters["metric"],
                 filters["resolution"],
             ],
         )
         return jsonify({**filters, "points": rows})
+
+    @app.get("/api/v1/gold/status-distribution")
+    def status_distribution():
+        filters = _filters()
+        rows = _dict_rows(
+            """
+            SELECT
+                status_class,
+                CAST(cell_count AS BIGINT) AS cell_count,
+                CAST(cell_ratio AS DOUBLE) AS cell_ratio,
+                CAST(fishing_hours_total AS DOUBLE) AS fishing_hours_total,
+                CAST(productivity_score_avg AS DOUBLE) AS productivity_score_avg,
+                CAST(fishing_score_avg AS DOUBLE) AS fishing_score_avg
+            FROM read_parquet(?, hive_partitioning = true)
+            WHERE event_date = CAST(? AS DATE)
+              AND aoi_id = ?
+              AND resolution_km = ?
+            ORDER BY status_class
+            """,
+            [
+                _parquet_glob("gold_dashboard_status_distribution"),
+                filters["date"],
+                filters["aoi"],
+                filters["resolution"],
+            ],
+        )
+        if not rows:
+            return jsonify({"error": "no matching status distribution partition"}), 404
+        return jsonify({**filters, "classes": rows})
 
     return app
 

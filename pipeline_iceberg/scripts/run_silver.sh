@@ -8,6 +8,10 @@ source "${SCRIPT_DIR}/spark_common.sh"
 RUN_ID="${PIPELINE_RUN_ID:-silver_$(date -u +%Y%m%dT%H%M%SZ)}"
 IFS=',' read -r -a aoi_ids <<< "${AOI_IDS}"
 for aoi_id in "${aoi_ids[@]}"; do
+  aoi_id="$(echo "${aoi_id}" | xargs)"
+  if [[ -z "${aoi_id}" ]]; then
+    continue
+  fi
   echo "SILVER run_id=${RUN_ID} aoi=${aoi_id} status=starting"
   "${SPARK_HOME}/bin/spark-submit" "${SPARK_COMMON[@]}" \
     "${SCRIPT_DIR}/../jobs/silver.py" \

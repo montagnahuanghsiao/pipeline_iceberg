@@ -15,5 +15,6 @@ export const httpOceanApi = {
   getAvailability: (filters) => request("/availability", filters),
   getDailyGrid: (filters) => request("/gold/daily-grid", filters),
   getSummary: (filters) => request("/gold/summary", filters),
+  getStatusDistribution: (filters) => request("/gold/status-distribution", filters),
   getTrend: ({ date: _date, ...filters }) => request("/gold/trend", filters),
 };

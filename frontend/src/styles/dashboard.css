@@ -299,7 +299,7 @@
   height: .45rem;
   flex: 1;
   border-radius: 999px;
-  background: linear-gradient(90deg, #202020, var(--teal), var(--blue), var(--lime));
+  background: linear-gradient(90deg, #d2d6d2, #7e8a84 24%, var(--teal) 48%, var(--blue) 70%, var(--lime));
 }
 
 .chart-panel {
