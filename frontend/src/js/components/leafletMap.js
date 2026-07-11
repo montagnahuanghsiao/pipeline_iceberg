@@ -90,11 +90,8 @@ function createGridCanvasLayer(L) {
         const coverage = Math.max(0, Math.min(1, Number(cell.data_coverage ?? 1)));
 
         ctx.globalAlpha = 0.34 + coverage * 0.52;
-        ctx.fillStyle = heatColor(
-          Number(cell.value),
-          this._metricMeta.domain,
-          this._metricMeta.higherIsBetter,
-        );
+        // 配色、線性／近似對數曲線與零值遮罩由 metric metadata 決定。
+        ctx.fillStyle = heatColor(Number(cell.value), this._metricMeta);
         ctx.fillRect(northwest.x, northwest.y, width + 0.35, height + 0.35);
       });
       ctx.globalAlpha = 1;
@@ -103,21 +100,25 @@ function createGridCanvasLayer(L) {
 }
 
 function addGraticules(map, L) {
+  // 經緯網：每 5 度一條，放在熱力圖下方作為空間位置參考。
+  // opacity 控制清晰度；dashArray 控制虛線的線段與間隔長度。
   for (let lat = 15; lat <= 35; lat += 5) {
     L.polyline([[lat, 103], [lat, 137]], {
       pane: "referencePane",
-      color: "#f5f5f2",
-      opacity: 0.08,
+      color: "#b8d8d2",
+      opacity: 0.28,
       weight: 1,
+      dashArray: "3 6",
       interactive: false,
     }).addTo(map);
   }
   for (let lon = 105; lon <= 135; lon += 5) {
     L.polyline([[13, lon], [37, lon]], {
       pane: "referencePane",
-      color: "#f5f5f2",
-      opacity: 0.08,
+      color: "#b8d8d2",
+      opacity: 0.28,
       weight: 1,
+      dashArray: "3 6",
       interactive: false,
     }).addTo(map);
   }
@@ -153,7 +154,8 @@ export function createOceanMap(container) {
   });
 
   [
-    ["referencePane", 210],
+    // 經緯線要高於熱力圖才看得到，但仍低於陸地與 AOI 邊界。
+    ["referencePane", 260],
     ["heatPane", 240],
     ["landPane", 280],
     ["aoiPane", 330],

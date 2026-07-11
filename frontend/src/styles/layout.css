@@ -94,7 +94,8 @@
 @media (min-width: 1024px) {
   .app-shell { padding-inline: 2rem; }
   .hero { grid-template-columns: 1.1fr .9fr; }
-  .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* 三張固定資料規模卡片，桌面版平均排成一列。 */
+  .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dashboard-layout { grid-template-columns: 19rem minmax(0, 1fr); }
   .note-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .site-footer { flex-direction: row; justify-content: space-between; align-items: end; }

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +67,20 @@ def _filters(require_date: bool = True) -> dict[str, Any]:
         "metric": metric,
         "resolution": resolution,
     }
+
+
+def _trend_window() -> tuple[str, date | None, date | None]:
+    raw = request.args.get("trend_window_days", "30").strip().lower()
+    if raw == "all":
+        return raw, None, None
+    try:
+        days = int(raw)
+    except ValueError as exc:
+        raise ValueError("trend_window_days must be 15, 30, 90 or all") from exc
+    if days not in {15, 30, 90}:
+        raise ValueError("trend_window_days must be 15, 30, 90 or all")
+    selected = date.fromisoformat(_required("date"))
+    return raw, selected - timedelta(days=days), selected + timedelta(days=days)
 
 
 def _query(sql: str, parameters: list[Any]) -> tuple[list[str], list[tuple[Any, ...]]]:
@@ -279,8 +293,18 @@ def create_app() -> Flask:
 
     @app.get("/api/v1/gold/trend")
     def trend():
-        filters = _filters(require_date=False)
+        filters = _filters(require_date=True)
+        trend_window_days, trend_start, trend_end = _trend_window()
         score_column = TREND_COLUMNS[filters["metric"]]
+        date_clause = ""
+        parameters: list[Any] = [
+            _parquet_glob("gold_dashboard_daily_metrics"),
+            filters["aoi"],
+            filters["resolution"],
+        ]
+        if trend_start and trend_end:
+            date_clause = "AND event_date BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)"
+            parameters.extend([trend_start.isoformat(), trend_end.isoformat()])
         rows = _dict_rows(
             f"""
             SELECT
@@ -289,15 +313,20 @@ def create_app() -> Flask:
             FROM read_parquet(?, hive_partitioning = true)
             WHERE aoi_id = ?
               AND resolution_km = ?
+              {date_clause}
             ORDER BY event_date
             """,
-            [
-                _parquet_glob("gold_dashboard_daily_metrics"),
-                filters["aoi"],
-                filters["resolution"],
-            ],
+            parameters,
         )
-        return jsonify({**filters, "points": rows})
+        return jsonify(
+            {
+                **filters,
+                "trend_window_days": trend_window_days,
+                "trend_start": trend_start.isoformat() if trend_start else None,
+                "trend_end": trend_end.isoformat() if trend_end else None,
+                "points": rows,
+            }
+        )
 
     @app.get("/api/v1/gold/status-distribution")
     def status_distribution():

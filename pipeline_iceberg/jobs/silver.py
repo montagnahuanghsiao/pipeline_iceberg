@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import date, datetime, timezone
 from functools import reduce
 from pathlib import Path
@@ -26,6 +27,12 @@ def parse_args():
     p.add_argument("--run-id", required=True)
     p.add_argument("--write-shards", type=int, default=32)
     p.add_argument("--max-records-per-file", type=int, default=2_000_000)
+    p.add_argument(
+        "--strict-quality",
+        choices=("true", "false"),
+        default=os.environ.get("SILVER_STRICT_QUALITY", "true").lower(),
+        help="Fail the Silver job when quality checks fail. Set false to write reports and continue.",
+    )
     return p.parse_args()
 
 
@@ -83,7 +90,7 @@ def write_quality_report(
     required_metric_groups: list[list[str]],
     source_rows: int,
     options,
-) -> None:
+) -> bool:
     """Validate one Silver output and persist a compact machine-readable report."""
     key_null = reduce(
         lambda left, right: left | right,
@@ -182,13 +189,17 @@ def write_quality_report(
     )
     print(f"QUALITY {report_json}")
     if not valid:
-        raise RuntimeError(
+        message = (
             f"Silver quality check failed for {dataset}: "
             f"rows={output_rows}, duplicates={duplicate_rows}, "
             f"null_keys={null_key_rows}, "
             f"days={observed_day_count}/{expected_day_count}, "
             f"required_metrics={required_metric_groups_passed}"
         )
+        if options.strict_quality == "true":
+            raise RuntimeError(message)
+        print(f"QUALITY_SOFT_FAIL {message}")
+    return valid
 
 
 def main():

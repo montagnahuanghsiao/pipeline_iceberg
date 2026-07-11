@@ -299,11 +299,16 @@
   height: .45rem;
   flex: 1;
   border-radius: 999px;
-  background: linear-gradient(90deg, #d2d6d2, #7e8a84 24%, var(--teal) 48%, var(--blue) 70%, var(--lime));
+  /* 預設色盤；JavaScript 會依目前產品動態覆寫。 */
+  background: linear-gradient(90deg, #dcfce7 0%, #86efac 38%, #22c55e 68%, #14532d 100%);
 }
 
 .chart-panel {
   padding-bottom: 1rem;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .bars {
@@ -338,7 +343,8 @@
 
 .trend-canvas {
   width: calc(100% - 2rem);
-  height: 9rem;
+  height: calc(100% - 2rem);
+  min-height: 9rem;
   margin: 1rem;
   border: 1px solid var(--line-soft);
   border-radius: .9rem;
@@ -351,6 +357,13 @@
 }
 
 @media (min-width: 1024px) {
+  /* 桌面版三張 Dashboard 卡片：同寬、正方形、橫向一列。 */
+  .analytics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .analytics-grid .chart-panel {
+    aspect-ratio: 1 / 1;
+  }
   .hero__visual {
     inset: 3rem 0 auto auto;
     width: 56%;

@@ -66,8 +66,8 @@ Bronze 上傳後會依產品與月份放在：
 例如：
 
 ```text
-/raw/ocean/bronze/CHL/year=2024/month=01
-/raw/ocean/bronze/GFW/year=2024/month=01
+/raw/ocean/bronze/CHL/year=2020/month=01
+/raw/ocean/bronze/GFW/year=2020/month=01
 ```
 
 ## 2. 每次 batch 必改設定
@@ -75,36 +75,36 @@ Bronze 上傳後會依產品與月份放在：
 每次換月份或換批次，主要修改 `00-configmap.yaml`：
 
 ```yaml
-BATCH_ID: "2024_01"
-START_DATE: "2024-01-01"
-END_DATE: "2024-01-31"
+BATCH_ID: "2020_01"
+START_DATE: "2020-01-01"
+END_DATE: "2020-01-31"
 AOI_IDS: taiwan,northwest_pacific
-SERVING_RELEASE_ID: "2024_01"
-DASHBOARD_START_DATE: "2024-01-01"
+SERVING_RELEASE_ID: "2020_01"
+DASHBOARD_START_DATE: "2020-01-01"
 FILL_WINDOW_DAYS: "5"
 ```
 
 欄位說明：
 
-| 欄位 | 何時改 | 說明 |
-|---|---|---|
-| `BATCH_ID` | 每次 batch | 批次識別碼，建議用 `YYYY_MM` |
-| `START_DATE` | 每次 batch | 本次處理開始日期 |
-| `END_DATE` | 每次 batch | 本次處理結束日期 |
-| `AOI_IDS` | 視需求 | 目前常用 `taiwan,northwest_pacific` |
-| `SERVING_RELEASE_ID` | 每次 batch | Serving release 名稱，通常與 `BATCH_ID` 相同 |
-| `DASHBOARD_START_DATE` | dashboard 範圍改變時 | Dashboard 指標表起算日期，現階段建議保留 `2024-01-01` |
-| `FILL_WINDOW_DAYS` | 補值策略調整時 | Gold 網格補值回看天數，目前為 `5`，降低計算壓力 |
+| 欄位                   | 何時改               | 說明                                                  |
+| ---------------------- | -------------------- | ----------------------------------------------------- |
+| `BATCH_ID`             | 每次 batch           | 批次識別碼，建議用 `YYYY_MM`                          |
+| `START_DATE`           | 每次 batch           | 本次處理開始日期                                      |
+| `END_DATE`             | 每次 batch           | 本次處理結束日期                                      |
+| `AOI_IDS`              | 視需求               | 目前常用 `taiwan,northwest_pacific`                   |
+| `SERVING_RELEASE_ID`   | 每次 batch           | Serving release 名稱，通常與 `BATCH_ID` 相同          |
+| `DASHBOARD_START_DATE` | dashboard 範圍改變時 | Dashboard 指標表起算日期，現階段建議保留 `2020-01-01` |
+| `FILL_WINDOW_DAYS`     | 補值策略調整時       | Gold 網格補值回看天數，目前為 `5`，降低計算壓力       |
 
 月批次範例：
 
 ```yaml
-BATCH_ID: "2024_02"
-START_DATE: "2024-02-01"
-END_DATE: "2024-02-29"
+BATCH_ID: "2020_02"
+START_DATE: "2020-02-01"
+END_DATE: "2020-02-29"
 AOI_IDS: taiwan,northwest_pacific
-SERVING_RELEASE_ID: "2024_02"
-DASHBOARD_START_DATE: "2024-01-01"
+SERVING_RELEASE_ID: "2020_02"
+DASHBOARD_START_DATE: "2020-01-01"
 FILL_WINDOW_DAYS: "5"
 ```
 
@@ -112,48 +112,48 @@ FILL_WINDOW_DAYS: "5"
 
 只跑下一個月份 batch 時，通常只需要改 ConfigMap 並重跑 Job，不一定要重建 image。
 
-| 變更內容 | 是否重建 image | 需要處理 |
-|---|---:|---|
-| 只改 `BATCH_ID` / 日期 / AOI / `FILL_WINDOW_DAYS` | 否 | `kubectl apply` ConfigMap，重跑 upload / silver / gold / serving Job |
-| 改 `pipeline_iceberg/jobs/*.py` | 是 | 重建並 push `ocean-spark-client:3.5.8` |
-| 改 `pipeline_iceberg/scripts/*.sh` | 是 | 重建並 push `ocean-spark-client:3.5.8` |
-| 改 Flask API | 是 | 重建並 push `ocean-flask-api:0.5.0` |
-| 改前端 HTML / CSS / JS | 是 | 重建並 push `ocean-frontend:0.5.0`，建議 `docker build --no-cache` |
-| 只改 Kubernetes YAML image tag / env / resource | 否 | `kubectl apply` 對應 YAML |
+| 變更內容                                          | 是否重建 image | 需要處理                                                                |
+| ------------------------------------------------- | -------------: | ----------------------------------------------------------------------- |
+| 只改 `BATCH_ID` / 日期 / AOI / `FILL_WINDOW_DAYS` |             否 | `kubectl apply` ConfigMap，重跑 upload / silver / gold / serving Job    |
+| 改 `pipeline_iceberg/jobs/*.py`                   |             是 | 重建並 push `ocean-spark-client:3.5.8`                                  |
+| 改 `pipeline_iceberg/scripts/*.sh`                |             是 | 重建並 push `ocean-spark-client:3.5.8`                                  |
+| 改 Flask API                                      |             是 | 重建並 push `ocean-flask-api:0.5.0`                                     |
+| 改前端 HTML / CSS / JS                            |             是 | 重建並 push `ocean-frontend:0.5.0`，建議 `sudo podman build --no-cache` |
+| 只改 Kubernetes YAML image tag / env / resource   |             否 | `kubectl apply` 對應 YAML                                               |
 
 ## 4. 建立與推送映像
 
-在可以執行 Docker 並推送私有 Registry 的機器：
+在可以執行 sudo podman 並推送私有 Registry 的機器：
 
 ```bash
 cd /opt/zfs/project
 
-docker build \
+sudo podman build \
   -f pipeline_iceberg/deploy/docker/Dockerfile.spark-client \
   -t dkreg.taroko:5000/ocean-spark-client:3.5.8 \
   pipeline_iceberg
 
-docker push --creds bigred:bigred --tls-verify=false dkreg.taroko:5000/ocean-spark-client:3.5.8
+sudo podman push --creds bigred:bigred --tls-verify=false dkreg.taroko:5000/ocean-spark-client:3.5.8
 
-docker build \
+sudo podman build \
   -f pipeline_iceberg/deploy/docker/Dockerfile.api \
   -t dkreg.taroko:5000/ocean-flask-api:0.5.0 \
   pipeline_iceberg
 
-docker push --creds bigred:bigred --tls-verify=false dkreg.taroko:5000/ocean-flask-api:0.5.0
+sudo podman push --creds bigred:bigred --tls-verify=false dkreg.taroko:5000/ocean-flask-api:0.5.0
 
-docker build --no-cache \
+sudo podman build --no-cache \
   -f pipeline_iceberg/deploy/docker/Dockerfile.frontend \
   -t dkreg.taroko:5000/ocean-frontend:0.5.0 \
   .
 
-docker push --creds bigred:bigred --tls-verify=false dkreg.taroko:5000/ocean-frontend:0.5.0
+sudo podman push --creds bigred:bigred --tls-verify=false dkreg.taroko:5000/ocean-frontend:0.5.0
 ```
 
 注意：
 
-- `docker push` 需要保留 `--creds bigred:bigred --tls-verify=false`。
-- Frontend 建議保留 `docker build --no-cache`，避免舊靜態檔或舊 JS cache 造成畫面沒有更新。
+- `sudo podman push` 需要保留 `--creds bigred:bigred --tls-verify=false`。
+- Frontend 建議保留 `sudo podman build --no-cache`，避免舊靜態檔或舊 JS cache 造成畫面沒有更新。
 - Kubernetes 目前使用 `ocean-flask-api:0.5.0` 與 `ocean-frontend:0.5.0`。
 
 `0.5.0` 前端 / API 包含：
@@ -177,12 +177,12 @@ kubectl get configmap ocean-pipeline-config -n dt -o yaml
 確認至少包含：
 
 ```text
-BATCH_ID=2024_01
-START_DATE=2024-01-01
-END_DATE=2024-01-31
+BATCH_ID=2020_01
+START_DATE=2020-01-01
+END_DATE=2020-01-31
 AOI_IDS=taiwan,northwest_pacific
-SERVING_RELEASE_ID=2024_01
-DASHBOARD_START_DATE=2024-01-01
+SERVING_RELEASE_ID=2020_01
+DASHBOARD_START_DATE=2020-01-01
 FILL_WINDOW_DAYS=5
 HDFS_BRONZE_ROOT=hdfs:///raw/ocean/bronze
 HDFS_SILVER_ROOT=hdfs:///elt/ocean/silver
@@ -193,14 +193,6 @@ LOCAL_SERVING_CURRENT=/opt/zfs/project/data/serving/current
 ```
 
 ## 6. 安全的月批次重跑流程
-
-不要使用：
-
-```bash
-kubectl delete -f pipeline_iceberg/deploy/kubernetes/
-```
-
-這會刪掉整個目錄內的資源，可能包含 ConfigMap、Deployment、Service、CronJob。月批次只需要針對 Job 刪除並重建。
 
 標準流程：
 
@@ -257,8 +249,8 @@ kubectl wait -n dt --for=condition=complete \
 驗證：
 
 ```bash
-hdfs dfs -count -h /raw/ocean/bronze/CHL/year=2024/month=01
-hdfs dfs -count -h /raw/ocean/bronze/GFW/year=2024/month=01
+hdfs dfs -count -h /raw/ocean/bronze/CHL/year=2020/month=01
+hdfs dfs -count -h /raw/ocean/bronze/GFW/year=2020/month=01
 hdfs dfs -ls /metadata/ocean/bronze | tail
 ```
 
@@ -346,24 +338,36 @@ kubectl wait -n dt --for=condition=complete \
 成功 log 範例：
 
 ```text
-SERVING_EXPORT release=2024_01 status=starting
-SERVING_MERGE dataset=gold_map_metric partition=event_date=2024-01-01/aoi_id=taiwan/resolution_km=4 status=merged
-SERVING_EXPORT release=2024_01 batch_hdfs=hdfs:///dataset/ocean/serving/batches/2024_01 current=/opt/zfs/project/data/serving/releases/2024_01 status=success
+SERVING_EXPORT release=2020_01 status=starting
+SERVING_MERGE dataset=gold_map_metric partition=event_date=2020-01-01/aoi_id=taiwan/resolution_km=4 status=merged
+SERVING_EXPORT release=2020_01 batch_hdfs=hdfs:///dataset/ocean/serving/batches/2020_01 current=/opt/zfs/project/data/serving/releases/2020_01 status=success
 ```
 
 驗證 HDFS batch：
 
 ```bash
-hdfs dfs -count -h /dataset/ocean/serving/batches/2024_01/gold_map_metric
-hdfs dfs -count -h /dataset/ocean/serving/batches/2024_01/gold_dashboard_daily_metrics
-hdfs dfs -count -h /dataset/ocean/serving/batches/2024_01/gold_dashboard_status_distribution
+hdfs dfs -count -h /dataset/ocean/serving/batches/2020_01/gold_map_metric
+hdfs dfs -count -h /dataset/ocean/serving/batches/2020_01/gold_dashboard_daily_metrics
+hdfs dfs -count -h /dataset/ocean/serving/batches/2020_01/gold_dashboard_status_distribution
 ```
 
 驗證本機 current snapshot：
 
 ```bash
-find /opt/zfs/project/data/serving/current \
-  -type f -name '*.parquet' | head
+find -L /opt/zfs/project/data/serving/current \
+  -type f \
+  -name '*.parquet' |
+head
+
+# 統計 Parquet 數量：
+find -L /opt/zfs/project/data/serving/current \
+  -type f \
+  -name '*.parquet' |
+wc -l
+
+# 統計容量：
+du -shL \
+  /opt/zfs/project/data/serving/current
 ```
 
 ## 12. Flask API
@@ -431,7 +435,7 @@ curl -sS 'http://ocean-frontend:8080/api/v1/availability?aoi=taiwan&product=CHL&
 curl -sS 'http://ocean-frontend:8080/api/v1/gold/summary?aoi=taiwan&resolution=4'
 curl -sS 'http://ocean-frontend:8080/api/v1/gold/trend?aoi=taiwan&resolution=4'
 curl -sS 'http://ocean-frontend:8080/api/v1/gold/status-distribution?aoi=taiwan&resolution=4'
-curl -i 'http://ocean-frontend:8080/api/v1/gold/daily-grid?date=2024-01-03&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
+curl -i 'http://ocean-frontend:8080/api/v1/gold/daily-grid?date=2020-01-03&aoi=taiwan&product=CHL&metric=chlor_a&resolution=4'
 ```
 
 前端會用 availability 自動限制日期，避免選到沒有資料的分區。Dashboard 圖卡使用 `gold_dashboard_daily_metrics` 與 `gold_dashboard_status_distribution`。
@@ -522,7 +526,7 @@ curl -sS 'http://ocean-frontend:8080/api/v1/availability?aoi=taiwan&product=CHL&
 
 ```bash
 find /opt/zfs/project/data/serving/current -type f -name '*.parquet' | head
-hdfs dfs -count -h /dataset/ocean/serving/batches/2024_01/gold_map_metric
+hdfs dfs -count -h /dataset/ocean/serving/batches/2020_01/gold_map_metric
 ```
 
 ### HDFS 目錄看起來沒有變
@@ -539,7 +543,7 @@ hdfs dfs -count -h /dataset/ocean/serving/batches/2024_01/gold_map_metric
 
 ```bash
 hdfs dfs -ls /raw/ocean/bronze
-hdfs dfs -find /raw/ocean/bronze -path '*/year=2024/month=01/*.parquet' | head
+hdfs dfs -find /raw/ocean/bronze -path '*/year=2020/month=01/*.parquet' | head
 hdfs dfs -ls /metadata/ocean/bronze | tail
 ```
 
@@ -609,10 +613,10 @@ MAX_RECORDS_PER_FILE: "2000000"
 
 OOM 速查：
 
-| 症狀 | 調整項目 | 建議值 |
-|---|---|---|
-| Executor OOM | `SPARK_EXECUTOR_MEMORY` | `6g` |
-| YARN container killed | `SPARK_EXECUTOR_MEMORY_OVERHEAD` | `1500m` |
-| Driver OOM | `SPARK_DRIVER_MEMORY` | `3g` |
-| Shuffle 單 partition 過重 | `SPARK_SHUFFLE_PARTITIONS` | `120` |
-| 西北太平洋跑太慢 | `SPARK_EXECUTOR_INSTANCES` | `"8"`，需確認 vCore 上限 |
+| 症狀                      | 調整項目                         | 建議值                   |
+| ------------------------- | -------------------------------- | ------------------------ |
+| Executor OOM              | `SPARK_EXECUTOR_MEMORY`          | `6g`                     |
+| YARN container killed     | `SPARK_EXECUTOR_MEMORY_OVERHEAD` | `1500m`                  |
+| Driver OOM                | `SPARK_DRIVER_MEMORY`            | `3g`                     |
+| Shuffle 單 partition 過重 | `SPARK_SHUFFLE_PARTITIONS`       | `120`                    |
+| 西北太平洋跑太慢          | `SPARK_EXECUTOR_INSTANCES`       | `"8"`，需確認 vCore 上限 |

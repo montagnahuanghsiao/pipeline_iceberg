@@ -11,7 +11,7 @@ spec:
       labels: {app: ocean-pipeline, stage: serving-export}
     spec:
       restartPolicy: Never
-      nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
+      nodeSelector: {kubernetes.io/hostname: tkdt-worker3}
       imagePullSecrets:
         - name: dkreg
       dnsPolicy: None

@@ -3,6 +3,7 @@ const listeners = new Set();
 export const state = {
   date: APP_CONFIG.defaultDate, aoi: APP_CONFIG.defaultAoi,
   product: APP_CONFIG.defaultProduct, metric: APP_CONFIG.defaultMetric,
+  trendWindowDays: "30",
   availableDates: [],
   grid: [], summary: null, trend: [], statusDistribution: [], loading: false, error: null,
 };

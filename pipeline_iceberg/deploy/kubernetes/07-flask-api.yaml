@@ -12,7 +12,7 @@ spec:
     metadata:
       labels: {app: ocean-flask-api}
     spec:
-      nodeSelector: {kubernetes.io/hostname: tkdt-worker1}
+      nodeSelector: {kubernetes.io/hostname: tkdt-worker3}
       imagePullSecrets:
         - name: dkreg
       dnsPolicy: None

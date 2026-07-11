@@ -1,4 +1,4 @@
-import { AOIS, APP_CONFIG, METRICS, PRODUCTS } from "./config.js";
+import { AOIS, APP_CONFIG, METRICS, PRODUCTS, TREND_WINDOWS } from "./config.js";
 import { createOceanApi } from "./api/client.js?v=0.5.0";
 import { state, setState, subscribe } from "./state.js";
 import { fillSelect, renderMetricTabs } from "./components/controls.js";
@@ -7,6 +7,7 @@ import { renderComponentBars } from "./components/bars.js?v=0.5.0";
 import { createOceanMap } from "./components/leafletMap.js";
 import { drawStatusPie } from "./components/pieCanvas.js";
 import { drawTrend } from "./components/trendCanvas.js";
+import { heatGradient } from "./utils/colorScale.js";
 
 const api = createOceanApi();
 let oceanMap;
@@ -16,6 +17,7 @@ const els = {
   aoi: byId("aoiSelect"),
   product: byId("productSelect"),
   metric: byId("metricSelect"),
+  trendWindow: byId("trendWindowSelect"),
   tabs: byId("metricTabs"),
   map: byId("oceanMap"),
   title: byId("mapTitle"),
@@ -28,6 +30,8 @@ const els = {
   trend: byId("trendCanvas"),
   statusPie: byId("statusPieCanvas"),
   kpis: byId("pipelineKpis"),
+  legendScale: document.querySelector(".legend i"),
+  analyticsCards: [...document.querySelectorAll(".analytics-grid .chart-panel")],
 };
 
 const metricsFor = (product) => METRICS.filter((item) => item.productId === product);
@@ -40,6 +44,7 @@ function queryFilters(includeDate = true) {
     product: state.product,
     metric: state.metric,
     resolution: state.aoi === "northwest_pacific" ? 16 : 4,
+    trendWindowDays: state.trendWindowDays,
   };
   if (includeDate) filters.date = state.date;
   return filters;
@@ -136,6 +141,31 @@ function render(current) {
   const resolution = current.grid[0]?.resolution_km
     ?? (current.aoi === "northwest_pacific" ? 16 : 4);
   els.title.textContent = metric.label;
+  // 切換產品時同步切換熱力圖圖例色盤。
+  if (els.legendScale) els.legendScale.style.background = heatGradient(metric.id);
+
+  // 三張 Dashboard 卡片的數值定義。
+  // 卡 1：三種指標各自達到當日 AOI 內前 20%（relative_score >= 80）的格網比例。
+  const [ratioCard, trendCard, statusCard] = els.analyticsCards;
+  if (ratioCard) {
+    ratioCard.querySelector("h3").textContent = "高值格網占比（前 20%）";
+    ratioCard.querySelector("p").textContent = "生產力、捕魚活動與永續壓力相對分數 ≥ 80 的格網占比";
+  }
+
+  // 卡 2：目前所選指標每日所有格網 relative_score 的平均值，範圍為 0–100。
+  if (trendCard) {
+    trendCard.querySelector("h3").textContent = `${metric.label}｜平均相對分數趨勢`;
+    const windowLabel = current.trendWindowDays === "all"
+      ? "全部可用日期"
+      : `所選日期前後 ${current.trendWindowDays} 天`;
+    trendCard.querySelector("p").textContent = `${aoi.label}・${windowLabel}・每日格網平均（0–100 分）`;
+  }
+
+  // 卡 3：用 60 分門檻交叉分類海洋生產力與捕魚活動，顯示各類格網比例。
+  if (statusCard) {
+    statusCard.querySelector("h3").textContent = "生產力 × 捕魚活動格網結構";
+    statusCard.querySelector("p").textContent = "以相對分數 60 分為門檻，顯示四類格網占全部格網比例";
+  }
   els.subtitle.textContent = `${current.date}｜${aoi.label}｜約 ${resolution} km`;
   els.source.textContent = APP_CONFIG.dataSource === "api" ? "ICEBERG API" : "MOCK";
   els.insight.textContent = current.metric === "fishing_hours"
@@ -174,6 +204,7 @@ function init() {
   els.date.value = state.date;
   fillSelect(els.aoi, AOIS, state.aoi);
   fillSelect(els.product, PRODUCTS, state.product);
+  fillSelect(els.trendWindow, TREND_WINDOWS, state.trendWindowDays);
   refreshMetrics();
 
   els.date.onchange = (event) => {
@@ -195,6 +226,10 @@ function init() {
     setState({ metric: event.target.value });
     refreshMetrics();
     syncAvailabilityAndLoad();
+  };
+  els.trendWindow.onchange = (event) => {
+    setState({ trendWindowDays: event.target.value });
+    loadData();
   };
   window.onresize = () => {
     oceanMap.invalidateSize();

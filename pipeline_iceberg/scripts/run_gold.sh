@@ -14,6 +14,8 @@ for aoi_id in "${aoi_ids[@]}"; do
   fi
   echo "GOLD aoi=${aoi_id} status=starting"
   "${SPARK_HOME}/bin/spark-submit" "${SPARK_COMMON[@]}" \
+    --conf "spark.sql.adaptive.enabled=false" \
+    --conf "spark.sql.maxPlanStringLength=8192" \
     "${SCRIPT_DIR}/../jobs/gold.py" \
     --silver-root "${HDFS_SILVER_ROOT}" \
     --catalog "${ICEBERG_CATALOG}" \
@@ -27,6 +29,8 @@ for aoi_id in "${aoi_ids[@]}"; do
 done
 echo "GOLD_DASHBOARD status=starting start=${DASHBOARD_START_DATE} end=${END_DATE}"
 "${SPARK_HOME}/bin/spark-submit" "${SPARK_COMMON[@]}" \
+  --conf "spark.sql.adaptive.enabled=false" \
+  --conf "spark.sql.maxPlanStringLength=8192" \
   "${SCRIPT_DIR}/../jobs/gold_dashboard.py" \
   --catalog "${ICEBERG_CATALOG}" \
   --namespace "${ICEBERG_NAMESPACE}" \

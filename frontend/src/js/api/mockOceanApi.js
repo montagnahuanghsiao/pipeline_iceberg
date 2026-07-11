@@ -118,6 +118,21 @@ export const mockOceanApi = {
     };
   },
   async getTrend(filters) {
-    return { ...filters, points: Array.from({ length: 31 }, (_, index) => ({ date: `2024-12-${String(index + 1).padStart(2, "0")}`, value: 48 + Math.sin(index / 3) * 17 + noise(index, 1, 4) * 12 })) };
+    const selected = new Date(`${filters.date}T00:00:00Z`);
+    const windowDays = filters.trendWindowDays === "all" ? 180 : Number(filters.trendWindowDays ?? 30);
+    const start = new Date(selected);
+    start.setUTCDate(start.getUTCDate() - windowDays);
+    const length = filters.trendWindowDays === "all" ? 181 : windowDays * 2 + 1;
+    return {
+      ...filters,
+      points: Array.from({ length }, (_, index) => {
+        const current = new Date(start);
+        current.setUTCDate(current.getUTCDate() + index);
+        return {
+          date: current.toISOString().slice(0, 10),
+          value: 48 + Math.sin(index / 4) * 17 + noise(index, 1, 4) * 12,
+        };
+      }),
+    };
   },
 };

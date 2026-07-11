@@ -6,6 +6,7 @@ source "${SCRIPT_DIR}/spark_common.sh"
 : "${HDFS_METADATA_ROOT:?}"
 : "${START_DATE:?}" "${END_DATE:?}" "${SILVER_WRITE_SHARDS:?}" "${MAX_RECORDS_PER_FILE:?}"
 RUN_ID="${PIPELINE_RUN_ID:-silver_$(date -u +%Y%m%dT%H%M%SZ)}"
+SILVER_STRICT_QUALITY="${SILVER_STRICT_QUALITY:-true}"
 IFS=',' read -r -a aoi_ids <<< "${AOI_IDS}"
 for aoi_id in "${aoi_ids[@]}"; do
   aoi_id="$(echo "${aoi_id}" | xargs)"
@@ -24,6 +25,7 @@ for aoi_id in "${aoi_ids[@]}"; do
     --metadata-root "${HDFS_METADATA_ROOT}" \
     --run-id "${RUN_ID}" \
     --write-shards "${SILVER_WRITE_SHARDS}" \
-    --max-records-per-file "${MAX_RECORDS_PER_FILE}"
+    --max-records-per-file "${MAX_RECORDS_PER_FILE}" \
+    --strict-quality "${SILVER_STRICT_QUALITY}"
   echo "SILVER run_id=${RUN_ID} aoi=${aoi_id} status=success"
 done

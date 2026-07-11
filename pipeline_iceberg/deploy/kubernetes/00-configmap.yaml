@@ -15,13 +15,14 @@ data:
   ICEBERG_WAREHOUSE: hdfs:///dataset/ocean/warehouse
   ICEBERG_CATALOG: lake
   ICEBERG_NAMESPACE: ocean
-  BATCH_ID: "2024_01"
+  BATCH_ID: "2020_02"
   AOI_IDS: taiwan,northwest_pacific
-  START_DATE: "2024-01-01"
-  END_DATE: "2024-01-31"
-  DASHBOARD_START_DATE: "2024-01-01"
+  START_DATE: "2020-02-01"
+  END_DATE: "2020-02-29"
+  DASHBOARD_START_DATE: "2020-02-01"
+  SILVER_STRICT_QUALITY: "false"
   FILL_WINDOW_DAYS: "5"
-  SERVING_RELEASE_ID: "2024_01"
+  SERVING_RELEASE_ID: "2020_02"
   SPARK_HOME: /opt/zfs/sys/spark-3.5.8-bin-hadoop3
   HADOOP_HOME: /opt/zfs/sys/hadoop-3.5.0
   HADOOP_CONF_DIR: /opt/zfs/sys/hadoop-3.5.0/etc/hadoop

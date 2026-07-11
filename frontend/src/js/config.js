@@ -23,6 +23,13 @@ export const METRICS = [
   { productId: "GFW", id: "fishing_hours", label: "捕魚時數相對高低", shortLabel: "捕魚時數", unit: "", domain: [0, 100], higherIsBetter: true },
 ];
 
+export const TREND_WINDOWS = [
+  { id: "15", label: "前後 15 天" },
+  { id: "30", label: "前後 30 天" },
+  { id: "90", label: "前後 90 天" },
+  { id: "all", label: "全部" },
+];
+
 export const PRODUCTS = [
   { id: "CHL", label: "葉綠素濃度" },
   { id: "SST", label: "海溫" },
