@@ -61,3 +61,19 @@ Linux 部署環境預設寫到：
 gold_batch_2020_03_20260711T090000Z.log
 gold_monthly_2020_01_12_20260711T090000Z.log
 ```
+
+## Missing derived metrics
+
+Gold keeps explained source gaps as `no_data` in the feature table. If a
+metric-day cannot provide a complete AOI map, that metric is omitted for the
+date at every resolution while other metrics continue. The batch still exits
+successfully and logs:
+
+```text
+GOLD_METRIC_SKIPPED ... reason=incomplete_metric_scope
+GOLD_DEGRADED ...
+BATCH status=degraded ...
+```
+
+`degraded` is an intentional, auditable partial publication. It is not a zero
+value and not a failed batch.

@@ -62,4 +62,5 @@ count_hdfs_path "$SERVING_BATCH_ROOT/gold_map_metric"
 count_hdfs_path "$SERVING_BATCH_ROOT/gold_dashboard_daily_metrics"
 count_hdfs_path "$SERVING_BATCH_ROOT/gold_dashboard_status_distribution"
 
+log "VERIFY note=missing_metric_days_are_allowed; inspect GOLD_METRIC_SKIPPED in the batch log"
 log "VERIFY status=success batch=$BATCH_ID"

@@ -1,6 +1,6 @@
 {
   "dataset": "gold_daily_grid_features",
-  "purpose": "Daily complete AOI 4 km grid with five final display products.",
+  "purpose": "Daily complete AOI 4 km feature grid; unavailable products remain explicitly null with a no_data source.",
   "grain": "event_date + aoi_id + grid_id",
   "unique_key": ["event_date", "aoi_id", "grid_id"],
   "partition_spec": ["event_date", "aoi_id"],
@@ -23,7 +23,12 @@
     "updated_at_utc": "timestamp",
     "pipeline_version": "string"
   },
-  "nullable_product_columns": [],
+  "nullable_product_columns": [
+    "chlor_a",
+    "sea_temperature_celsius",
+    "ocean_productivity_score",
+    "sustainability_pressure"
+  ],
   "fill_policy": {
     "window_days": "configured by --fill-window-days; MVP default deployment is 5",
     "nasa_order": [
@@ -33,11 +38,11 @@
       "AOI trailing mean"
     ],
     "gfw_missing": 0,
-    "failure_policy": "Any final product null or NaN fails the job; Gold display outputs are complete."
+    "failure_policy": "NaN or unexplained null fails the job. Explained no_data is retained in this audit table; incomplete date/AOI/metric scopes are omitted from gold_map_metric at every resolution."
   },
   "formulas": {
     "sea_temperature_celsius": "coalesce(sst4, nsst, sst), then apply the fill policy",
     "ocean_productivity_score": "chlor_a / daily_aoi_avg(chlor_a) + poc / daily_aoi_avg(poc) + nflh / daily_aoi_avg(nflh)",
-    "sustainability_pressure": "fishing_hours / max(ocean_productivity_score, 1e-9); zero when fishing_hours is zero"
+    "sustainability_pressure": "null when ocean_productivity_score is unavailable; otherwise fishing_hours / max(ocean_productivity_score, 1e-9), with zero when fishing_hours is zero"
   }
 }

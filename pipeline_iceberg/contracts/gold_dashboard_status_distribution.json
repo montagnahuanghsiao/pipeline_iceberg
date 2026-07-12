@@ -24,5 +24,6 @@
     "updated_at_utc": "timestamp",
     "pipeline_version": "string"
   },
+  "missing_policy": "If productivity or fishing activity is unavailable for a date/AOI/resolution, no status rows are published for that scope.",
   "partition_by": ["event_date", "aoi_id", "resolution_km"]
 }

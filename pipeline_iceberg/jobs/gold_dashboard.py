@@ -32,10 +32,20 @@ def table_exists(spark: SparkSession, table: str) -> bool:
         raise
 
 
-def write_iceberg(df: DataFrame, table: str, partitions: list[str]) -> None:
+def write_iceberg(
+    df: DataFrame,
+    table: str,
+    partitions: list[str],
+    overwrite_filter=None,
+) -> None:
     ordered = df.sortWithinPartitions(*partitions)
     if table_exists(df.sparkSession, table):
-        ordered.writeTo(table).overwritePartitions()
+        if overwrite_filter is not None:
+            # Replace only the requested date range, including removal of stale
+            # status partitions for dates whose derived metrics are unavailable.
+            ordered.writeTo(table).overwrite(overwrite_filter)
+        else:
+            ordered.writeTo(table).overwritePartitions()
     else:
         (
             ordered.writeTo(table)
@@ -125,8 +135,6 @@ def build_daily_metrics(map_metric: DataFrame) -> DataFrame:
                 "fishing_hours_total": 0.0,
                 "active_cell_ratio": 0.0,
                 "high_activity_cell_ratio": 0.0,
-                "high_productivity_cell_ratio": 0.0,
-                "high_pressure_cell_ratio": 0.0,
             }
         )
     )
@@ -154,7 +162,7 @@ def build_daily_metrics(map_metric: DataFrame) -> DataFrame:
             "updated_at_utc",
             F.current_timestamp(),
         )
-        .withColumn("pipeline_version", F.lit("0.5.0"))
+        .withColumn("pipeline_version", F.lit("0.5.1"))
     )
 
 
@@ -219,7 +227,7 @@ def build_status_distribution(map_metric: DataFrame) -> DataFrame:
         )
         .withColumn("cell_ratio", F.col("cell_count") / F.sum("cell_count").over(total))
         .withColumn("updated_at_utc", F.current_timestamp())
-        .withColumn("pipeline_version", F.lit("0.5.0"))
+        .withColumn("pipeline_version", F.lit("0.5.1"))
     )
 
 
@@ -243,11 +251,13 @@ def main() -> None:
             daily,
             f"{namespace}.gold_dashboard_daily_metrics",
             ["event_date", "aoi_id", "resolution_km"],
+            date_filter,
         )
         write_iceberg(
             status,
             f"{namespace}.gold_dashboard_status_distribution",
             ["event_date", "aoi_id", "resolution_km"],
+            date_filter,
         )
         print(
             "GOLD_DASHBOARD "

@@ -8,10 +8,10 @@ the configured AOI rectangle and fills missing observations in this order:
 3. trailing mean of the eight surrounding grid cells;
 4. trailing mean over the whole AOI.
 
-GFW cells without an activity row are zero-filled.  All five frontend metrics
+GFW cells without an activity row are zero-filled. All five frontend metrics
 with values are converted to 0-100 percentile scores within
-date/AOI/metric/resolution. Final display products must be complete; the job
-fails rather than writing no-data grid cells.
+date/AOI/metric/resolution. An incomplete metric-day is omitted at every map
+resolution while other dates and metrics continue.
 """
 from __future__ import annotations
 
@@ -357,7 +357,12 @@ def add_derived_products(frame: DataFrame) -> DataFrame:
         )
         .withColumn(
             "sustainability_pressure",
-            F.when(F.col("fishing_hours") <= 0, F.lit(0.0)).otherwise(
+            F.when(
+                F.col("ocean_productivity_score").isNull(),
+                F.lit(None).cast("double"),
+            )
+            .when(F.col("fishing_hours") <= 0, F.lit(0.0))
+            .otherwise(
                 F.col("fishing_hours")
                 / F.greatest(F.col("ocean_productivity_score"), F.lit(1e-9))
             ),
@@ -454,7 +459,12 @@ def resolution_wide(fine: DataFrame, resolution_km: int) -> DataFrame:
         )
         .withColumn(
             "sustainability_pressure",
-            F.when(F.col("fishing_hours") <= 0, F.lit(0.0)).otherwise(
+            F.when(
+                F.col("ocean_productivity_score").isNull(),
+                F.lit(None).cast("double"),
+            )
+            .when(F.col("fishing_hours") <= 0, F.lit(0.0))
+            .otherwise(
                 F.col("fishing_hours")
                 / F.greatest(F.col("ocean_productivity_score"), F.lit(1e-9))
             ),
@@ -501,11 +511,30 @@ def long_metrics(wide: DataFrame) -> DataFrame:
 
 
 def add_relative_score(frame: DataFrame) -> DataFrame:
-    """Rank every displayed metric inside its date/AOI/metric/resolution scope."""
+    """Publish and rank only complete date/AOI/metric scopes.
+
+    A missing cell must not be rendered as a low or zero value.  If any value
+    at any resolution is null/NaN, omit that metric-day at every resolution
+    while leaving other metrics and dates available.
+    """
     scope = ["event_date", "aoi_id", "product_id", "metric_id", "resolution_km"]
+    validity_scope = ["event_date", "aoi_id", "product_id", "metric_id"]
+    scope_window = Window.partitionBy(*validity_scope)
     rank_window = Window.partitionBy(*scope).orderBy(F.col("metric_value"))
     count_window = Window.partitionBy(*scope)
-    valid = frame.where(F.col("metric_value").isNotNull())
+    valid = (
+        frame.withColumn(
+            "_invalid_scope_values",
+            F.sum(
+                F.when(
+                    F.col("metric_value").isNull() | F.isnan("metric_value"),
+                    F.lit(1),
+                ).otherwise(F.lit(0))
+            ).over(scope_window),
+        )
+        .where(F.col("_invalid_scope_values") == 0)
+        .drop("_invalid_scope_values")
+    )
     ranked = (
         valid.withColumn(
             "relative_score",
@@ -525,15 +554,10 @@ def add_relative_score(frame: DataFrame) -> DataFrame:
             .otherwise(F.lit("very_low")),
         )
     )
-    missing = (
-        frame.where(F.col("metric_value").isNull())
-        .withColumn("relative_score", F.lit(None).cast("double"))
-        .withColumn("display_level", F.lit("no_data"))
-    )
     return (
-        ranked.unionByName(missing)
+        ranked
         .withColumn("updated_at_utc", F.current_timestamp())
-        .withColumn("pipeline_version", F.lit("0.5.0"))
+        .withColumn("pipeline_version", F.lit("0.5.1"))
     )
 
 
@@ -640,7 +664,7 @@ def main():
                 "data_coverage",
             )
             .withColumn("updated_at_utc", F.current_timestamp())
-            .withColumn("pipeline_version", F.lit("0.5.0"))
+            .withColumn("pipeline_version", F.lit("0.5.1"))
             .persist(StorageLevel.MEMORY_AND_DISK)
         )
         assert_missing_values_explained(
@@ -654,17 +678,9 @@ def main():
             ],
             "gold_daily_grid_features",
         )
-        assert_no_missing_values(
-            wide,
-            [
-                "chlor_a",
-                "sea_temperature_celsius",
-                "ocean_productivity_score",
-                "sustainability_pressure",
-                "fishing_hours",
-            ],
-            "gold_daily_grid_features",
-        )
+        # The feature table preserves explained no-data values for auditability.
+        # Complete, frontend-facing metric scopes are enforced below when the
+        # long map table is built.
         write_iceberg(
             wide,
             f"{namespace}.gold_daily_grid_features",
@@ -678,6 +694,48 @@ def main():
         serving = add_relative_score(long_metrics(multi_resolution)).persist(
             StorageLevel.MEMORY_AND_DISK
         )
+        scope_columns = [
+            "event_date",
+            "aoi_id",
+            "product_id",
+            "metric_id",
+            "resolution_km",
+        ]
+        published_scopes = {
+            (
+                str(row.event_date),
+                row.product_id,
+                row.metric_id,
+                int(row.resolution_km),
+            )
+            for row in serving.select(*scope_columns).distinct().collect()
+        }
+        expected_scopes = {
+            (
+                str(options.start_date + timedelta(days=offset)),
+                product_id,
+                metric_id,
+                resolution_km,
+            )
+            for offset in range((options.end_date - options.start_date).days + 1)
+            for product_id, metric_id, _ in PRODUCT_SPECS
+            for resolution_km in (4, 16, 32)
+        }
+        omitted_scopes = sorted(expected_scopes - published_scopes)
+        for event_date, product_id, metric_id, resolution_km in omitted_scopes:
+            print(
+                "GOLD_METRIC_SKIPPED "
+                f"date={event_date} aoi={options.aoi_id} "
+                f"product={product_id} metric={metric_id} "
+                f"resolution_km={resolution_km} "
+                "reason=incomplete_metric_scope"
+            )
+        if omitted_scopes:
+            print(
+                "GOLD_DEGRADED "
+                f"aoi={options.aoi_id} omitted_scopes={len(omitted_scopes)} "
+                f"published_scopes={len(published_scopes)}"
+            )
         assert_missing_values_explained(
             serving,
             [("metric_value", "value_source")],

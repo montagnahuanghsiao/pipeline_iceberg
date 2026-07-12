@@ -183,4 +183,8 @@ patch_configmap
 run_gold
 run_serving
 verify_batch
-log "BATCH status=success batch=$BATCH_ID log=$LOG_FILE"
+if grep -q "GOLD_DEGRADED" "$LOG_FILE"; then
+  log "BATCH status=degraded batch=$BATCH_ID log=$LOG_FILE"
+else
+  log "BATCH status=success batch=$BATCH_ID log=$LOG_FILE"
+fi

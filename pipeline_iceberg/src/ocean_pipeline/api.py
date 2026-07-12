@@ -289,6 +289,19 @@ def create_app() -> Flask:
                 "text": f"{((row['high_pressure_cell_ratio'] or 0) * 100):.1f}%",
             },
         ]
+        # Do not turn an unavailable derived indicator into a misleading 0%.
+        component_availability = [
+            row["high_productivity_cell_ratio"] is not None,
+            row["high_activity_cell_ratio"] is not None,
+            row["high_pressure_cell_ratio"] is not None,
+        ]
+        components = [
+            component
+            for component, available in zip(
+                components, component_availability, strict=True
+            )
+            if available
+        ]
         return jsonify({**filters, **row, "nasa_coverage": row["data_coverage"], "components": components})
 
     @app.get("/api/v1/gold/trend")
@@ -313,6 +326,7 @@ def create_app() -> Flask:
             FROM read_parquet(?, hive_partitioning = true)
             WHERE aoi_id = ?
               AND resolution_km = ?
+              AND {score_column} IS NOT NULL
               {date_clause}
             ORDER BY event_date
             """,
@@ -354,8 +368,8 @@ def create_app() -> Flask:
             ],
         )
         if not rows:
-            return jsonify({"error": "no matching status distribution partition"}), 404
-        return jsonify({**filters, "classes": rows})
+            return jsonify({**filters, "available": False, "classes": []})
+        return jsonify({**filters, "available": True, "classes": rows})
 
     return app
 

@@ -71,7 +71,11 @@ for month in $(seq -w "$((10#$START_MONTH))" "$((10#$END_MONTH))"); do
   log "MONTHLY batch=$batch_id status=starting"
 
   if bash "$SCRIPT_DIR/run_gold_batch.sh" "$YEAR" "$month" 2>&1 | tee -a "$LOG_FILE"; then
-    log "MONTHLY batch=$batch_id status=success"
+    if grep -q "BATCH status=degraded batch=$batch_id" "$LOG_FILE"; then
+      log "MONTHLY batch=$batch_id status=degraded"
+    else
+      log "MONTHLY batch=$batch_id status=success"
+    fi
   else
     log "MONTHLY batch=$batch_id status=failed"
     log "MONTHLY stopped. Resume after fixing with: bash pipeline_iceberg/ops/run_gold_monthly.sh $YEAR $month $END_MONTH"
