@@ -20,7 +20,7 @@ if (( end_epoch < start_epoch )); then
   exit 2
 fi
 
-run_id="bronze_upload_gfw_${BATCH_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+run_id="bronze_upload_nasa_${BATCH_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 manifest="$(mktemp)"
 trap 'rm -f "${manifest}"' EXIT
 
@@ -29,65 +29,66 @@ printf 'run_id\tproduct\tevent_date\tlocal_file\thdfs_file\tbytes\tsha256\n' > "
 "${HDFS}" dfs -mkdir -p "${HDFS_BRONZE_ROOT}" "${HDFS_METADATA_ROOT}/bronze"
 
 total_files=0
-product="GFW"
-product_root="${LOCAL_BRONZE_ROOT}/${product}"
+for product in CHL NFLH POC SST NSST SST4; do
+  product_root="${LOCAL_BRONZE_ROOT}/${product}"
 
-if [[ ! -d "${product_root}" ]]; then
-  echo "ERROR: Bronze product directory not found: ${product_root}" >&2
-  exit 3
-fi
-
-product_files=0
-current_epoch="${start_epoch}"
-
-while (( current_epoch <= end_epoch )); do
-  day="$(date -u -d "@${current_epoch}" +%F)"
-  compact_day="${day//-/}"
-  year="${day:0:4}"
-  month="${day:5:2}"
-
-  source_dir="${product_root}/year=${year}/month=${month}"
-  target_dir="${HDFS_BRONZE_ROOT}/${product}/year=${year}/month=${month}"
-
-  "${HDFS}" dfs -mkdir -p "${target_dir}"
-
-  if [[ ! -d "${source_dir}" ]]; then
-    echo "ERROR: Bronze month directory not found: ${source_dir}" >&2
-    exit 4
+  if [[ ! -d "${product_root}" ]]; then
+    echo "ERROR: Bronze product directory not found: ${product_root}" >&2
+    exit 3
   fi
 
-  mapfile -d '' day_files < <(
-    find "${source_dir}" -maxdepth 1 -type f \
-      \( -name "*${compact_day}*.parquet" -o -name "*${day}*.parquet" \) \
-      -print0
-  )
+  product_files=0
+  current_epoch="${start_epoch}"
 
-  if (( ${#day_files[@]} != 1 )); then
-    echo "ERROR: expected exactly one ${product} file for ${day}; found ${#day_files[@]}" >&2
-    printf '  %s\n' "${day_files[@]:-<none>}" >&2
-    exit 4
-  fi
+  while (( current_epoch <= end_epoch )); do
+    day="$(date -u -d "@${current_epoch}" +%F)"
+    compact_day="${day//-/}"
+    year="${day:0:4}"
+    month="${day:5:2}"
 
-  file="${day_files[0]}"
-  name="$(basename "${file}")"
-  target="${target_dir}/${name}"
-  bytes="$(stat -c %s "${file}")"
-  sha256="$(sha256sum "${file}" | awk '{print $1}')"
+    source_dir="${product_root}/year=${year}/month=${month}"
+    target_dir="${HDFS_BRONZE_ROOT}/${product}/year=${year}/month=${month}"
 
-  "${HDFS}" dfs -put -f "${file}" "${target}"
+    "${HDFS}" dfs -mkdir -p "${target_dir}"
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "${run_id}" "${product}" "${day}" "${file}" "${target}" "${bytes}" "${sha256}" >> "${manifest}"
+    if [[ ! -d "${source_dir}" ]]; then
+      echo "ERROR: Bronze month directory not found: ${source_dir}" >&2
+      exit 4
+    fi
 
-  product_files=$((product_files + 1))
-  total_files=$((total_files + 1))
+    mapfile -d '' day_files < <(
+      find "${source_dir}" -maxdepth 1 -type f \
+        \( -name "*${compact_day}*.parquet" -o -name "*${day}*.parquet" \) \
+        -print0
+    )
 
-  echo "UPLOAD product=${product} date=${day} file=${name} status=success"
+    if (( ${#day_files[@]} != 1 )); then
+      echo "ERROR: expected exactly one ${product} file for ${day}; found ${#day_files[@]}" >&2
+      printf '  %s\n' "${day_files[@]:-<none>}" >&2
+      exit 4
+    fi
 
-  current_epoch=$((current_epoch + 86400))
+    file="${day_files[0]}"
+    name="$(basename "${file}")"
+    target="${target_dir}/${name}"
+    bytes="$(stat -c %s "${file}")"
+    sha256="$(sha256sum "${file}" | awk '{print $1}')"
+
+    "${HDFS}" dfs -put -f "${file}" "${target}"
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "${run_id}" "${product}" "${day}" "${file}" "${target}" "${bytes}" "${sha256}" >> "${manifest}"
+
+    product_files=$((product_files + 1))
+    total_files=$((total_files + 1))
+
+    echo "UPLOAD product=${product} date=${day} file=${name} status=success"
+
+    current_epoch=$((current_epoch + 86400))
+  done
+
+  echo "PRODUCT product=${product} files=${product_files} status=complete"
 done
-
-echo "PRODUCT product=${product} files=${product_files} status=complete"
 
 "${HDFS}" dfs -put -f "${manifest}" "${HDFS_METADATA_ROOT}/bronze/${run_id}.tsv"
 echo "COMPLETE run_id=${run_id} files=${total_files} manifest=${HDFS_METADATA_ROOT}/bronze/${run_id}.tsv"
